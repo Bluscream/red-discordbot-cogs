@@ -135,11 +135,11 @@ class Birthdays(commands.Cog):
 
             await self._create_event(ctx, dt)
                 
-            await ctx.send(lang.get("response.birthday_set").format(month=month,day=day))
+            await ctx.reply(lang.get("response.birthday_set").format(month=month,day=day))
             
         except ValueError as err:
             print(err)
-            await ctx.send(lang.get("response.invalid_date_format"))
+            await ctx.reply(lang.get("response.invalid_date_format"))
 
     # @commands.command(name="listbdays", description="List upcoming birthdays")
     # async def list_birthdays(self, ctx):

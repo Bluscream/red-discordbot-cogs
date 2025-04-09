@@ -20,4 +20,4 @@ class Strings:
         lang = lang or self.lang or self.default_lang
         if lang not in self.strings:
             self.load_strings(lang)
-        return self.strings.get(lang, {}).get(id, self.strings[self.default_lang].get(id, "Unknown String"))
+        return self.strings.get(lang, {}).get(id, self.strings[self.default_lang].get(id, id))
