@@ -10,12 +10,12 @@ class Strings:
 
     def load_strings(self, lang):
         strings_file_path = f"strings/{lang}.json"
-        print(path.abspath(strings_file_path))
+        log.error(path.abspath(strings_file_path))
         if path.exists(strings_file_path):
             with open(strings_file_path, 'r', encoding='utf-8') as file:
                 self.strings[lang] = load(file)
         else:
-            print(f"{strings_file_path} does not exist!")
+            log.error(f"{strings_file_path} does not exist!")
             self.strings[lang] = {}
 
     def get(self, id, lang=None):

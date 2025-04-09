@@ -12,6 +12,8 @@ from redbot.core.utils.chat_formatting import error, info, success, warning
 
 from .pcx_lib import *
 
+log = logging.getLogger("red.blu.birthdays")
+
 from .strings import Strings
 lang = Strings('de')
 
@@ -138,7 +140,7 @@ class Birthdays(commands.Cog):
             await ctx.reply(lang.get("response.birthday_set").format(month=month,day=day))
             
         except ValueError as err:
-            print(err)
+            log.error(err)
             await ctx.reply(lang.get("response.invalid_date_format"))
 
     # @commands.command(name="listbdays", description="List upcoming birthdays")
@@ -167,7 +169,7 @@ class Birthdays(commands.Cog):
 
     #             upcoming_birthdays.append(lang.get("response.days_until_birthday").format(username=username,days_until=days_until))
     #         except ValueError as err:
-    #             print(lang.get("error.skipping_invalid_birthday").format(username=birthday_data['username'],err=err))
+    #             log.error(lang.get("error.skipping_invalid_birthday").format(username=birthday_data['username'],err=err))
         
     #     if not upcoming_birthdays:
     #         await ctx.send(lang.get("response.no_upcoming_birthdays"))
