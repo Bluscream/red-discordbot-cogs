@@ -110,7 +110,7 @@ class Birthdays(commands.Cog):
         raise ValueError(lang.get("error.invalid_date_format").format(date_str=date_str))
 
     def _get_next(self, dt: date):
-        now = date.now().date()
+        now = datetime.now().date()
         if dt <= now: dt = date(now.year + 1, dt.month, dt.day) # Todo: wait for https://github.com/Rapptz/discord.py/pull/9685
         return dt
 
