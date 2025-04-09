@@ -15,6 +15,7 @@ class Strings:
     def load_strings(self, lang):
         strings_file_path = f"strings/{lang}.json"
         strings_file_path = path.join(__location__, strings_file_path)
+        log.error(strings_file_path)
         if path.exists(strings_file_path):
             with open(strings_file_path, 'r', encoding='utf-8') as file:
                 self.strings[lang] = load(file)
