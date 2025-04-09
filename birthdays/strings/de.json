@@ -17,7 +17,7 @@
     "event.description9": "Alles Gute zum Geburtstag! Mögen sich alle deine Träume erfüllen!",
     "event.description10": "{nickname}, schicke dir Liebe und Geburtstagsgrüße!",
     "event.location": "Discord",
-    "event.name": "Geburtstag von {nickname}",
+    "event.name": "Geburtstag von {username}",
     "reason.event_create": "Erstellt vom {botname}-Bot",
     "reason.event_recreate": "Neuerstellung des Events",
     "message.birthday": "Alles Gute zum Geburtstag {nickname} in {guild_name}!",
