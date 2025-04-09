@@ -172,39 +172,46 @@ class Birthdays(commands.Cog):
         except ValueError as err:
             log.error(err)
             await ctx.reply(lang.get("response.invalid_date_format"))
-
-    # @commands.command(name="listbdays", description="List upcoming birthdays")
-    # async def list_birthdays(self, ctx):
-    #     guild_id = str(ctx.guild.id)
-        
-    #     if guild_id not in self.birthday_data:
-    #         await ctx.send(lang.get("response.no_birthdays"))
-    #         return
             
-    #     today = date.today()
-    #     upcoming_birthdays = []
-        
-    #     for member_id, birthday_data in self.birthday_data[guild_id]["members"].items():
-    #         try:
-    #             bday_date = self._parse_birthday(birthday_data["date"])
-                
-    #             # Calculate days until birthday
-    #             next_birthday = date(today.year, bday_date.month, bday_date.day)
-    #             if next_birthday < today:
-    #                 next_birthday = date(today.year + 1, bday_date.month, bday_date.day)
-                
-    #             days_until = (next_birthday - today).days
-                
-    #             username = f"{birthday_data['username']}#{birthday_data['discriminator']}"
+    @commands.command(name="bdays", description="List all saved birthdays and days until next birthday")
+    async def list_birthdays(self, ctx):
+        birthdays = await self.config.birthdays()
+        if not birthdays:
+            await ctx.reply(lang.get("response.no_birthdays"))
+            return
 
-    #             upcoming_birthdays.append(lang.get("response.days_until_birthday").format(username=username,days_until=days_until))
-    #         except ValueError as err:
-    #             log.error(lang.get("error.skipping_invalid_birthday").format(username=birthday_data['username'],err=err))
+        today = datetime.now()
+        next_year = today.replace(year=today.year + 1)
         
-    #     if not upcoming_birthdays:
-    #         await ctx.send(lang.get("response.no_upcoming_birthdays"))
-    #     else:
-    #         await ctx.send("\n".join(upcoming_birthdays))
+        upcoming_birthdays = []
+        for user_id, date_str in birthdays.items():
+            member = ctx.guild.get_member(int(user_id))
+            if not member:
+                continue
+                
+            birthday = datetime.strptime(date_str, "%Y-%m-%d")
+            next_birthday = birthday.replace(year=today.year)
+            
+            if next_birthday < today:
+                next_birthday = next_birthday.replace(year=today.year + 1)
+                
+            days_until = (next_birthday - today).days
+            upcoming_birthdays.append((days_until, member))
+            
+        if not upcoming_birthdays:
+            await ctx.reply(lang.get("response.no_upcoming_birthdays"))
+            return
+            
+        upcoming_birthdays.sort()
+        response = "\n".join(
+            lang.get("response.days_until_birthday").format(
+                nickname=member.nick or member.global_name or member.name,
+                days_until=days
+            )
+            for days, member in upcoming_birthdays
+        )
+        
+        await ctx.reply(response)
 # endregion metods
 
     @staticmethod
