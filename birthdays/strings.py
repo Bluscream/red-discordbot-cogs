@@ -14,6 +14,7 @@ class Strings:
             with open(strings_file_path, 'r', encoding='utf-8') as file:
                 self.strings[lang] = load(file)
         else:
+            print(f"{strings_file_path} does not exist!")
             self.strings[lang] = {}
 
     def get(self, id, lang=None):
