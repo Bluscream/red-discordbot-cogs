@@ -135,7 +135,7 @@ class Birthdays(commands.Cog):
 
             await self._create_event(ctx, dt)
                 
-            await ctx.send(lang.get("response.event_created")+"\n"+lang.get("response.birthday_set").format(month=month,day=day))
+            await ctx.send(lang.get("response.birthday_set").format(month=month,day=day))
             
         except ValueError as err:
             print(err)
