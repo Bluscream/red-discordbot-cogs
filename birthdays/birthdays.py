@@ -111,6 +111,7 @@ class Birthdays(commands.Cog):
 
     def _get_next(self, dt: date):
         now = datetime.now().date()
+        if isinstance(dt, datetime): dt = dt.date()
         if dt <= now: dt = date(now.year + 1, dt.month, dt.day) # Todo: wait for https://github.com/Rapptz/discord.py/pull/9685
         return dt
 
