@@ -4,7 +4,7 @@ from contextlib import suppress
 from typing import Any, ClassVar
 from datetime import date, datetime
 from logging import getLogger
-from random import randint
+from random import randint, choice
 
 import discord, pytz, os
 from discord.ext import tasks # commands
@@ -117,8 +117,8 @@ class Birthdays(commands.Cog):
         for event in ctx.guild.scheduled_events:
             if event.name == event_name:
                 await event.delete(reason=lang.get("reason.event_recreate").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name,botname=self.bot.user))
-        prefix = ' '+random.choice(emojis) if random.choice([True, False]) else ""
-        suffix = random.choice(emojis)+' ' if random.choice([True, False]) else ""
+        prefix = ' '+choice(emojis) if choice([True, False]) else ""
+        suffix = choice(emojis)+' ' if choice([True, False]) else ""
         description = lang.get(f"event.description{randint(1, 10)}").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name)
         return await ctx.guild.create_scheduled_event(
             name=event_name,
