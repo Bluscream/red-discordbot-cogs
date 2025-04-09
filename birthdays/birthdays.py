@@ -187,7 +187,7 @@ class Birthdays(commands.Cog):
             await ctx.reply(lang.get("response.no_birthdays"))
             return
 
-        today = datetime.now()
+        today = datetime.now().date()
         
         upcoming_birthdays = []
         for user_id, date_str in birthdays.items():
