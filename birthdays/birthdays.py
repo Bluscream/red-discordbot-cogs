@@ -123,10 +123,15 @@ class Birthdays(commands.Cog):
             reason=lang.get("reason.event_create").format(botname=self.bot.user)
         )
 
-    # @commands.command(name="ping", help="Check the bot's latency")
-    # async def ping(self, ctx):
-    #     latency = self.bot.latency * 1000  # Convert to milliseconds
-    #     await ctx.send(lang.get("response.ping").format(latency=f"{latency:.2f}"))
+    @commands.command(name="rbday", description="Recreate all birthday events")
+    @commands.is_owner()
+    async def recreate_birthdays(self, ctx):
+        for event in ctx.guild.scheduled_events:
+            if not event.name.startswith(lang.get("event.name").split()[0]): continue
+            ctx.author = discord.utils.get(ctx.guild.members, name=event.name.split()[-1])
+            birthdays = await self.config.birthdays()
+            if not ctx.author.id in birthdays: birthdays[ctx.author.id] = date(event.start) 
+            await self._create_event(ctx, self._parse_date(birthdays[ctx.author.id]))
 
     @commands.command(name="bday", description="Set your birthday")
     async def set_birthday(self, ctx, date: str):
