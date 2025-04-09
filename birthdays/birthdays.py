@@ -116,6 +116,7 @@ class Birthdays(commands.Cog):
 
     async def _create_event(self, ctx, dt: date):
         """"""
+        # Do dt_next here?
         start = pytz.utc.localize(datetime.combine(dt, datetime.min.time()))
         end = pytz.utc.localize(datetime.combine(dt, datetime.max.time()))
         event_name = lang.get("event.name").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name)
