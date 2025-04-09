@@ -196,19 +196,18 @@ class Birthdays(commands.Cog):
                 next_birthday = next_birthday.replace(year=today.year + 1)
                 
             days_until = (next_birthday - today).days
-            upcoming_birthdays.append((days_until, member))
+            upcoming_birthdays.append((days_until, member, birthday))
             
         if not upcoming_birthdays:
             await ctx.reply(lang.get("response.no_upcoming_birthdays"))
             return
             
         upcoming_birthdays.sort()
-        response = "\n".join(
-            lang.get("response.days_until_birthday").format(
-                nickname=member.nick or member.global_name or member.name,
-                days_until=days
-            )
-            for days, member in upcoming_birthdays
+        
+        response = "### Upcoming Birthdays:\n\n"
+        response += "\n".join(
+            lang.get("response.days_until_birthday").format(nickname=member.nick or member.global_name or member.name, birthday=birthday.strftime('%d.%m.%Y'), days=days)
+            for days, member, birthday in upcoming_birthdays
         )
         
         await ctx.reply(response)

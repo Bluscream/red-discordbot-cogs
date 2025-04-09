@@ -22,7 +22,7 @@
     "reason.event_create": "Created by {botname} bot",
     "reason.event_recreate": "Recreating event",
     "response.birthday_set": "🎂 Your birthday has been set to **{month}/{day}**\n🎉 An event for your birthday has been created!",
-    "response.days_until_birthday": "{nickname}: {days_until} days until birthday",
+    "response.days_until_birthday": "`{nickname}`: **{birthday}** ({days} days)",
     "response.invalid_date_format": "Invalid date! Please use DD MM format.",
     "response.no_birthdays": "No birthdays recorded yet!",
     "response.no_upcoming_birthdays": "No upcoming birthdays!",

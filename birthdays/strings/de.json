@@ -25,7 +25,7 @@
     "response.birthday_set": "🎂 Dein Geburtstag wurde auf **{day}.{month}** gesetzt\n🎉 Ein Event für deinen Geburtstag wurde erstellt!",
     "response.no_birthdays": "Es wurden noch keine Geburtstage erfasst!",
     "response.no_upcoming_birthdays": "Keine bevorstehenden Geburtstage!",
-    "response.days_until_birthday": "{nickname}: {days_until} Tage bis zum Geburtstag",
+    "response.days_until_birthday": "`{nickname}`: **{birthday}** ({days} Tage bis zum Geburtstag)",
     "response.ping": "Pong! Die Latenz beträgt {latency}ms",
     "response.finished_recreate": "{count} / {events} events wurden neu erstellt!"
   }
