@@ -1,0 +1,20 @@
+{
+    "bot.connected": "{self_user} hat sich mit Discord verbunden!",
+    "bot.failed": "Bot konnte nicht gestartet werden: {err}",
+    "bot.ready": "{self_user} ist bereit für Events!",
+    "error.invalid_date_format": "Ungültiges Geburtstagsformat: {date_str}",
+    "error.invalid_date_format_internal": "Ungültiges Geburtstagsformat für {username}: {err}",
+    "error.skipping_invalid_birthday": "Überspringt ungültigen Geburtstag von {username}: {err}",
+    "event.description": "Heute ist der Geburtstag von {username}",
+    "event.location": "Zuhause bei {username}",
+    "event.name": "Geburtstag von {username}",
+    "event.reason": "Erstellt vom {botname}-Bot",
+    "message.birthday": "Alles Gute zum Geburtstag {username} in {guild_name}!",
+    "response.event_created": "🎉 Ein Event für deinen Geburtstag wurde erstellt! Siehe oben.",
+    "response.invalid_date_format": "Ungültiges Datum! Bitte verwende das Format TT MM.",
+    "response.birthday_set": "🎂 Dein Geburtstag wurde auf {month}/{day} gesetzt",
+    "response.no_birthdays": "Es wurden noch keine Geburtstage erfasst!",
+    "response.no_upcoming_birthdays": "Keine bevorstehenden Geburtstage!",
+    "response.days_until_birthday": "{username}: {days_until} Tage bis zum Geburtstag",
+    "response.ping": "Pong! Die Latenz beträgt {latency}ms"
+  }
