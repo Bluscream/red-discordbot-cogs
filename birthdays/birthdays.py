@@ -112,7 +112,7 @@ class Birthdays(commands.Cog):
     def _get_next(self, dt: date):
         now = datetime.now().date()
         if isinstance(dt, datetime): dt = dt.date()
-        log.error(f"dt: {dt}, dt <= now: {dt <= now}, now: {now}")
+        # log.error(f"dt: {dt}, dt <= now: {dt <= now}, now: {now}")
         if dt <= now: # If the date is in the past, add a year to make it next year's date
             dt = date(now.year + 1, dt.month, dt.day)
         elif dt > date(now.year + 1, now.month, now.day): # If the date is in the future but more than a year away, set to current year
