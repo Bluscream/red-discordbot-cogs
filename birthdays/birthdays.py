@@ -105,7 +105,7 @@ class Birthdays(commands.Cog):
         month = dt.month; day = dt.day
         d_next = date(next_year, month, day)
         start = pytz.utc.localize(datetime.combine(d_next, datetime.min.time()))
-        end = datetime.combine(start, datetime.max.time())
+        end = pytz.utc.localize(datetime.combine(d_next, datetime.max.time()))
         event_name = lang.get("event.name").format(username=ctx.author.name,guild_name=ctx.guild.name)
         event_exists = False
         for event in ctx.guild.scheduled_events:
