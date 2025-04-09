@@ -19,6 +19,22 @@ log = getLogger("red.blu.birthdays")
 from .strings import Strings
 lang = Strings('de')
 
+date_formats = [
+    "%d.%m.%y",  # 1.12.95
+    "%d.%m.%Y",  # 1.12.1995
+    "%Y-%m-%d",  # 1995-12-01
+    "%d.%m.",    # 1.12.
+    "%d %m",    # 1 12
+    "%d %m %y",    # 1 12 95
+    "%d %m %Y",    # 1 12 1995
+    "%d-%m-%y",  # 1-12-95
+    "%d-%m-%Y",  # 1-12-1995
+    "%d/%m/%y",  # 1/12/95
+    "%d/%m/%Y",  # 1/12/1995
+]
+
+emojis = ['🎂','🎉','🧁','🥂','🍻','🍾','🎈','🎁','🎊']
+
 
 class Birthdays(commands.Cog):
     """
@@ -74,22 +90,8 @@ class Birthdays(commands.Cog):
 # region methods
     def _parse_date(self, date_str):
         """Parse birthday date string in various formats"""
-        # Try different date formats
-        formats = [
-            "%d.%m.%y",  # 1.12.95
-            "%d.%m.%Y",  # 1.12.1995
-            "%Y-%m-%d",  # 1995-12-01
-            "%d.%m.",    # 1.12.
-            "%d %m",    # 1 12
-            "%d %m %y",    # 1 12 95
-            "%d %m %Y",    # 1 12 1995
-            "%d-%m-%y",  # 1-12-95
-            "%d-%m-%Y",  # 1-12-1995
-            "%d/%m/%y",  # 1/12/95
-            "%d/%m/%Y",  # 1/12/1995
-        ]
 
-        for fmt in formats:
+        for fmt in date_formats:
             try:
                 # For formats without year, use current year
                 if fmt.endswith("."):
@@ -115,9 +117,12 @@ class Birthdays(commands.Cog):
         for event in ctx.guild.scheduled_events:
             if event.name == event_name:
                 await event.delete(reason=lang.get("reason.event_recreate").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name,botname=self.bot.user))
+        prefix = ' '+random.choice(emojis) if random.choice([True, False]) else ""
+        suffix = random.choice(emojis)+' ' if random.choice([True, False]) else ""
+        description = lang.get(f"event.description{randint(1, 10)}").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name)
         return await ctx.guild.create_scheduled_event(
             name=event_name,
-            description=lang.get(f"event.description{randint(1, 10)}").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name)+f"\n\n||birthday:{ctx.author.id}||",
+            description=f"{prefix}{description}{suffix}\n\n||birthday:{ctx.author.id}||",
             start_time=start,
             end_time=end,
             privacy_level=discord.PrivacyLevel.guild_only,
