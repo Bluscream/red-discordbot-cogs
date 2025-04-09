@@ -1,5 +1,6 @@
 from json import load
 from os import path
+from logging import getLogger
 
 log = getLogger("red.blu.strings")
 
