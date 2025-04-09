@@ -116,7 +116,6 @@ class Birthdays(commands.Cog):
 
     async def _create_event(self, ctx, dt: date):
         """"""
-        dt = 
         start = pytz.utc.localize(datetime.combine(dt, datetime.min.time()))
         end = pytz.utc.localize(datetime.combine(dt, datetime.max.time()))
         event_name = lang.get("event.name").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name)
@@ -150,7 +149,9 @@ class Birthdays(commands.Cog):
             if not ctx.author.id in birthdays:
                 birthdays[ctx.author.id] = str(event.start_time.date())
                 await self.config.birthdays.set(birthdays)
-            await self._create_event(ctx, self._parse_date(birthdays[ctx.author.id]))
+            dt_birthday = self._parse_date(birthdays[ctx.author.id])
+            dt_next = self._get_next(dt_birthday)
+            await self._create_event(ctx, dt_next)
             _cnt += 1
             await asyncio.sleep(1)
         await ctx.respond(lang.get("response.finished_recreate").format(count=_cnt, events=len(events)))
