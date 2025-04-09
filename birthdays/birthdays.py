@@ -131,7 +131,7 @@ class Birthdays(commands.Cog):
             ctx.author = discord.utils.get(ctx.guild.members, name=event.name.split()[-1])
             birthdays = await self.config.birthdays()
             if not ctx.author.id in birthdays:
-                birthdays[ctx.author.id] = date(event.start_time)
+                birthdays[ctx.author.id] = str(date(event.start_time))
                 await self.config.birthdays.set(birthdays)
             await self._create_event(ctx, self._parse_date(birthdays[ctx.author.id]))
 
