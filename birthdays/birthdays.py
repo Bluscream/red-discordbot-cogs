@@ -103,6 +103,11 @@ class Birthdays(commands.Cog):
         d_next = date(next_year, month, day)
         start = pytz.utc.localize(datetime.combine(d_next, datetime.min.time()))
         end = datetime.combine(start, datetime.max.time())
+        event_name = lang.get("event.name").format(username=ctx.author.name,guild_name=ctx.guild.name)
+        event_exists = False
+        for event in ctx.guild.scheduled_events:
+            if event.name == event_name:
+                await event.delete(reason=lang.get("reason.event_recreate").format(username=ctx.author.name,guild_name=ctx.guild.name,botname=self.bot.user))
         return await ctx.guild.create_scheduled_event(
             name=event_name,
             description=lang.get("event.description").format(username=ctx.author.name,guild_name=ctx.guild.name),
@@ -111,7 +116,7 @@ class Birthdays(commands.Cog):
             privacy_level=discord.PrivacyLevel.guild_only,
             location=lang.get("event.location").format(username=ctx.author.name,guild_name=ctx.guild.name),
             entity_type=discord.EntityType.external,
-            reason=lang.get("event.reason").format(botname=self.bot.user)
+            reason=lang.get("reason.event_create").format(botname=self.bot.user)
         )
 
     # @commands.command(name="ping", help="Check the bot's latency")
@@ -128,18 +133,9 @@ class Birthdays(commands.Cog):
             birthdays[str(ctx.author.id)] = str(dt)
             await self.config.birthdays.set(birthdays)
 
-            event_name = lang.get("event.name").format(username=ctx.author.name,guild_name=ctx.guild.name)
-            event_exists = False
-            for event in ctx.guild.scheduled_events:
-                if event.name == event_name:
-                    event_exists = True
-                    break
-            
-            if not event_exists:
-                await self._create_event(ctx, dt)
-                await ctx.send(lang.get("response.event_created"))
+            await self._create_event(ctx, dt)
                 
-            await ctx.send(lang.get("response.birthday_set").format(month=month,day=day))
+            await ctx.send(lang.get("response.event_created")+"\n"+lang.get("response.birthday_set").format(month=month,day=day))
             
         except ValueError as err:
             print(err)

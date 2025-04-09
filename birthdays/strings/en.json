@@ -8,13 +8,14 @@
     "event.description": "Today is {username}'s birthday",
     "event.location": "{username}'s Home",
     "event.name": "{username}'s Birthday",
-    "event.reason": "Created by {botname} bot",
     "message.birthday": "Happy birthday to {username} in {guild_name}!",
+    "reason.event_create": "Created by {botname} bot",
+    "reason.event_recreate": "Recreating event",
+    "response.birthday_set": "🎂 Your birthday has been set to {month}/{day}",
+    "response.days_until_birthday": "{username}: {days_until} days until birthday",
     "response.event_created": "🎉 An event for your birthday has been created! Check it out above.",
     "response.invalid_date_format": "Invalid date! Please use DD MM format.",
-    "response.birthday_set": "🎂 Your birthday has been set to {month}/{day}",
     "response.no_birthdays": "No birthdays recorded yet!",
     "response.no_upcoming_birthdays": "No upcoming birthdays!",
-    "response.days_until_birthday": "{username}: {days_until} days until birthday",
     "response.ping": "Pong! The bot's latency is {latency}ms"
 }
