@@ -12,7 +12,7 @@ from redbot.core.utils.chat_formatting import error, info, success, warning
 
 from .pcx_lib import *
 
-from strings import Strings
+from .strings import Strings
 lang = Strings('de')
 
 
