@@ -1,8 +1,9 @@
 from json import load
-from os import path
+from os import path, getcwd
 from logging import getLogger
 
 log = getLogger("red.blu.strings")
+__location__ = path.realpath(path.join(os.getcwd(), path.dirname(__file__)))
 
 class Strings:
     def __init__(self, lang='en', default_lang='en'):
@@ -13,7 +14,7 @@ class Strings:
 
     def load_strings(self, lang):
         strings_file_path = f"strings/{lang}.json"
-        log.error(path.abspath(strings_file_path))
+        strings_file_path = path.join(__location__, strings_file_path)
         if path.exists(strings_file_path):
             with open(strings_file_path, 'r', encoding='utf-8') as file:
                 self.strings[lang] = load(file)
