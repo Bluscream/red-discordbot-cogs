@@ -3,7 +3,7 @@ from os import path, getcwd
 from logging import getLogger
 
 log = getLogger("red.blu.strings")
-__location__ = path.realpath(path.join(os.getcwd(), path.dirname(__file__)))
+__location__ = path.realpath(path.join(getcwd(), path.dirname(__file__)))
 
 class Strings:
     def __init__(self, lang='en', default_lang='en'):
