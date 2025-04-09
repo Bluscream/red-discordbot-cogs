@@ -80,6 +80,9 @@ class Birthdays(commands.Cog):
             "%d.%m.%Y",  # 1.12.1995
             "%Y-%m-%d",  # 1995-12-01
             "%d.%m.",    # 1.12.
+            "%d %m",    # 1 12
+            "%d %m %y",    # 1 12 95
+            "%d %m %Y",    # 1 12 1995
             "%d-%m-%y",  # 1-12-95
             "%d-%m-%Y",  # 1-12-1995
             "%d/%m/%y",  # 1/12/95
@@ -136,8 +139,12 @@ class Birthdays(commands.Cog):
             await self._create_event(ctx, self._parse_date(birthdays[ctx.author.id]))
 
     @commands.command(name="bday", description="Set your birthday")
-    async def set_birthday(self, ctx, date: str):
+    async def set_birthday(self, ctx, date: str, member: discord.Member = None):
         dt = self._parse_date(date)
+
+        if member:
+            if not is_owner(): return
+            ctx.author = member
 
         try:
             birthdays = await self.config.birthdays()
