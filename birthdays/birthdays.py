@@ -80,7 +80,6 @@ class Birthdays(commands.Cog):
             "%d.%m.%Y",  # 1.12.1995
             "%Y-%m-%d",  # 1995-12-01
             "%d.%m.",    # 1.12.
-            "%d.%m",     # 1.12
             "%d-%m-%y",  # 1-12-95
             "%d-%m-%Y",  # 1-12-1995
             "%d/%m/%y",  # 1/12/95
@@ -91,7 +90,7 @@ class Birthdays(commands.Cog):
             try:
                 # For formats without year, use current year
                 if fmt.endswith("."):
-                    date_str = date_str + str(datetime.now().year)
+                    date_str = date_str + "." + str(datetime.now().year)
                     fmt = fmt + "%Y"
                 
                 parsed_date = datetime.strptime(date_str, fmt)
@@ -115,7 +114,7 @@ class Birthdays(commands.Cog):
                 await event.delete(reason=lang.get("reason.event_recreate").format(username=ctx.author.name,nickname=ctx.author.nick,guild_name=ctx.guild.name,botname=self.bot.user))
         return await ctx.guild.create_scheduled_event(
             name=event_name,
-            description=lang.get(f"event.description{randint(1, 10)}").format(username=ctx.author.name,nickname=ctx.author.nick,guild_name=ctx.guild.name),
+            description=lang.get(f"event.description{randint(1, 10)}").format(username=ctx.author.name,nickname=ctx.author.nick,guild_name=ctx.guild.name)+f"\nbirthday:{ctx.author.id}",
             start_time=start,
             end_time=end,
             privacy_level=discord.PrivacyLevel.guild_only,
