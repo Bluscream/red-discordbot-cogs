@@ -117,8 +117,8 @@ class Birthdays(commands.Cog):
         for event in ctx.guild.scheduled_events:
             if event.name == event_name:
                 await event.delete(reason=lang.get("reason.event_recreate").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name,botname=self.bot.user))
-        prefix = f"{choice(emojis)} " if choice([True, False]) else ""
-        suffix = f" {choice(emojis)}" if choice([True, False]) else ""
+        prefix = f"{choice(emojis)}  " if choice([True, False]) else ""
+        suffix = f"  {choice(emojis)}" if choice([True, False]) else ""
         description = lang.get(f"event.description{randint(1, 10)}").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name)
         return await ctx.guild.create_scheduled_event(
             name=event_name,
