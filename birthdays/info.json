@@ -1,0 +1,19 @@
+{
+    "name": "Birthdays",
+    "author": [
+        "Bluscream (bluscream_)"
+    ],
+    "short": "Adds events for user birthdays",
+    "description": "Adds events for user birthdays",
+    "install_msg": "Thanks for installing Birthdays! For a quick rundown on how to get started with this cog, check out [the readme](https://github.com/Bluscream/red-discordbot-cogs/tree/master/birthdays/README.md)",
+    "tags": [
+        "utility"
+    ],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        11,
+        0
+    ],
+    "end_user_data_statement": "lol"
+}
