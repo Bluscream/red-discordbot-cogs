@@ -4,6 +4,7 @@ from contextlib import suppress
 from typing import Any, ClassVar
 from datetime import date, datetime
 from logging import getLogger
+from random import randint
 
 import discord, pytz, os
 from discord.ext import tasks # commands
@@ -113,7 +114,7 @@ class Birthdays(commands.Cog):
                 await event.delete(reason=lang.get("reason.event_recreate").format(username=ctx.author.name,guild_name=ctx.guild.name,botname=self.bot.user))
         return await ctx.guild.create_scheduled_event(
             name=event_name,
-            description=lang.get("event.description").format(username=ctx.author.name,guild_name=ctx.guild.name),
+            description=lang.get(f"event.description{random.randint(1, 10)}").format(username=ctx.author.name,guild_name=ctx.guild.name),
             start_time=start,
             end_time=end,
             privacy_level=discord.PrivacyLevel.guild_only,
@@ -138,7 +139,7 @@ class Birthdays(commands.Cog):
 
             await self._create_event(ctx, dt)
                 
-            await ctx.reply(lang.get("response.birthday_set").format(month=month,day=day))
+            await ctx.reply(lang.get("response.birthday_set").format(month=dt.month,day=dt.day))
             
         except ValueError as err:
             log.error(err)
