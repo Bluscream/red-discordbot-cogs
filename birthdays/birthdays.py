@@ -107,18 +107,18 @@ class Birthdays(commands.Cog):
         d_next = date(next_year, month, day)
         start = pytz.utc.localize(datetime.combine(d_next, datetime.min.time()))
         end = pytz.utc.localize(datetime.combine(d_next, datetime.max.time()))
-        event_name = lang.get("event.name").format(username=ctx.author.name,nickname=ctx.author.nick,guild_name=ctx.guild.name)
+        event_name = lang.get("event.name").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name)
         event_exists = False
         for event in ctx.guild.scheduled_events:
             if event.name == event_name:
-                await event.delete(reason=lang.get("reason.event_recreate").format(username=ctx.author.name,nickname=ctx.author.nick,guild_name=ctx.guild.name,botname=self.bot.user))
+                await event.delete(reason=lang.get("reason.event_recreate").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name,botname=self.bot.user))
         return await ctx.guild.create_scheduled_event(
             name=event_name,
-            description=lang.get(f"event.description{randint(1, 10)}").format(username=ctx.author.name,nickname=ctx.author.nick,guild_name=ctx.guild.name)+f"\n\nbirthday:{ctx.author.id}",
+            description=lang.get(f"event.description{randint(1, 10)}").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name)+f"\n\nbirthday:{ctx.author.id}",
             start_time=start,
             end_time=end,
             privacy_level=discord.PrivacyLevel.guild_only,
-            location=lang.get("event.location").format(username=ctx.author.name,nickname=ctx.author.nick,guild_name=ctx.guild.name),
+            location=lang.get("event.location").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name),
             entity_type=discord.EntityType.external,
             reason=lang.get("reason.event_create").format(botname=self.bot.user)
         )
