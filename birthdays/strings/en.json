@@ -26,5 +26,6 @@
     "response.invalid_date_format": "Invalid date! Please use DD MM format.",
     "response.no_birthdays": "No birthdays recorded yet!",
     "response.no_upcoming_birthdays": "No upcoming birthdays!",
-    "response.ping": "Pong! The bot's latency is {latency}ms"
+    "response.ping": "Pong! The bot's latency is {latency}ms",
+    "response.finished_recreate": "Finished recreating {count} / {events} events"
 }

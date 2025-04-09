@@ -26,5 +26,6 @@
     "response.no_birthdays": "Es wurden noch keine Geburtstage erfasst!",
     "response.no_upcoming_birthdays": "Keine bevorstehenden Geburtstage!",
     "response.days_until_birthday": "{nickname}: {days_until} Tage bis zum Geburtstag",
-    "response.ping": "Pong! Die Latenz beträgt {latency}ms"
+    "response.ping": "Pong! Die Latenz beträgt {latency}ms",
+    "response.finished_recreate": "{count} / {events} events wurden neu erstellt!"
   }

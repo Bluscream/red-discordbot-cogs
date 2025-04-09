@@ -71,7 +71,10 @@ class Birthdays(commands.Cog):
         return f"{pre_processed}\n\nCog Version: {self.__version__}"
 
     async def red_delete_data_for_user(self, *, _requester: str, _user_id: int) -> None:
-        """Nothing to delete."""
+        birthdays = await self.config.birthdays()
+        if _user_id in birthdays:
+            del birthdays[ctx.author.id]
+            await self.config.birthdays.set(birthdays)
         return
 
     #
@@ -90,28 +93,28 @@ class Birthdays(commands.Cog):
 # region methods
     def _parse_date(self, date_str):
         """Parse birthday date string in various formats"""
-
         for fmt in date_formats:
             try:
-                # For formats without year, use current year
                 if fmt.endswith("."):
-                    date_str = date_str + "." + str(datetime.now().year)
+                    date_sep = "" if date_str.endswith(".") else "."
+                    date_str = date_str + date_sep + str(datetime.now().year)
                     fmt = fmt + "%Y"
-                
+                elif fmt.endswith("-"):
+                    date_sep = "" if date_str.endswith("-") else "-"
+                    date_str = date_str + date_sep + str(datetime.now().year)
+                    fmt = fmt + "%Y"
                 parsed_date = datetime.strptime(date_str, fmt)
                 return parsed_date.date()
             except ValueError:
                 continue
-
         raise ValueError(lang.get("error.invalid_date_format").format(date_str=date_str))
 
     async def _create_event(self, ctx, dt: date):
         """"""
-        next_year = datetime.now().year + 1
-        month = dt.month; day = dt.day
-        d_next = date(next_year, month, day)
-        start = pytz.utc.localize(datetime.combine(d_next, datetime.min.time()))
-        end = pytz.utc.localize(datetime.combine(d_next, datetime.max.time()))
+        now = datetime.now()
+        if dt <= date.today(): dt = date(now.year + 1, dt.month, dt.day) # Todo: wait for https://github.com/Rapptz/discord.py/pull/9685
+        start = pytz.utc.localize(datetime.combine(dt, datetime.min.time()))
+        end = pytz.utc.localize(datetime.combine(dt, datetime.max.time()))
         event_name = lang.get("event.name").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name)
         event_exists = False
         for event in ctx.guild.scheduled_events:
@@ -134,7 +137,9 @@ class Birthdays(commands.Cog):
     @commands.command(name="rbdays", description="Recreate all birthday events")
     @commands.is_owner()
     async def recreate_birthdays(self, ctx):
-        for event in ctx.guild.scheduled_events:
+        _cnt = 0
+        events = ctx.guild.scheduled_events
+        for event in events:
             if not event.name.startswith(lang.get("event.name").split()[0]): continue
             ctx.author = discord.utils.get(ctx.guild.members, name=event.name.split()[-1])
             birthdays = await self.config.birthdays()
@@ -142,7 +147,9 @@ class Birthdays(commands.Cog):
                 birthdays[ctx.author.id] = str(event.start_time.date())
                 await self.config.birthdays.set(birthdays)
             await self._create_event(ctx, self._parse_date(birthdays[ctx.author.id]))
+            _cnt += 1
             await asyncio.sleep(1)
+        await ctx.respond(lang.get("response.finished_recreate").format(count=_cnt, events=len(events)))
 
     @commands.command(name="bday", description="Set your birthday")
     async def set_birthday(self, ctx, date: str, member: discord.Member = None):
