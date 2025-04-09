@@ -1,6 +1,8 @@
 from json import load
 from os import path
 
+log = getLogger("red.blu.strings")
+
 class Strings:
     def __init__(self, lang='en', default_lang='en'):
         self.strings = {}
