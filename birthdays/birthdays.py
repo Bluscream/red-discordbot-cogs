@@ -130,7 +130,7 @@ class Birthdays(commands.Cog):
             if not event.name.startswith(lang.get("event.name").split()[0]): continue
             ctx.author = discord.utils.get(ctx.guild.members, name=event.name.split()[-1])
             birthdays = await self.config.birthdays()
-            if not ctx.author.id in birthdays: birthdays[ctx.author.id] = date(event.start) 
+            if not ctx.author.id in birthdays: birthdays[ctx.author.id] = date(event.start_time) 
             await self._create_event(ctx, self._parse_date(birthdays[ctx.author.id]))
 
     @commands.command(name="bday", description="Set your birthday")
