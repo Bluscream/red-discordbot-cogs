@@ -3,6 +3,7 @@
 from contextlib import suppress
 from typing import Any, ClassVar
 from datetime import date, datetime
+from logging import getLogger
 
 import discord, pytz, os
 from discord.ext import tasks # commands
@@ -12,7 +13,7 @@ from redbot.core.utils.chat_formatting import error, info, success, warning
 
 from .pcx_lib import *
 
-log = logging.getLogger("red.blu.birthdays")
+log = getLogger("red.blu.birthdays")
 
 from .strings import Strings
 lang = Strings('de')
