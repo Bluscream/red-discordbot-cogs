@@ -125,7 +125,7 @@ class Birthdays(commands.Cog):
 
         try:
             birthdays = await self.config.birthdays()
-            birthdays[str(ctx.author.id)] = dt
+            birthdays[str(ctx.author.id)] = str(dt)
             await self.config.birthdays.set(birthdays)
 
             event_name = lang.get("event.name").format(username=ctx.author.name,guild_name=ctx.guild.name)
