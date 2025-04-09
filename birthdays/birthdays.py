@@ -4,7 +4,7 @@ from contextlib import suppress
 from typing import Any, ClassVar
 from datetime import date, datetime
 
-import discord, pytz, json, os
+import discord, pytz, os
 from discord.ext import tasks # commands
 from redbot.core import Config, checks, commands
 from redbot.core.bot import Red
@@ -111,9 +111,6 @@ class Birthdays(commands.Cog):
                 "username": ctx.author.name,
                 # "discriminator": ctx.author.discriminator
             }
-            
-            with open("birthdays.json", "w") as f:
-                json.dump(self.birthday_data, f)
 
             # set in red config
             birthdays = await self.config.birthdays()
