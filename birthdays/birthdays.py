@@ -27,7 +27,7 @@ class Birthdays(commands.Cog):
     __author__ = "Bluscream"
     __version__ = "1.0.0"
 
-    default_global_settings: ClassVar[dict[str, int] | dict[str, dict[str, str]]] = {
+    default_global_settings: ClassVar[dict[str, int] | dict[str, dict[int, str]]] = {
         "schema_version": 0,
         "birthdays": {}
     }
@@ -143,12 +143,13 @@ class Birthdays(commands.Cog):
         dt = self._parse_date(date)
 
         if member:
-            if not is_owner(): return
+            owner = await self.bot.is_owner(ctx.author)
+            if not owner: return
             ctx.author = member
 
         try:
             birthdays = await self.config.birthdays()
-            birthdays[str(ctx.author.id)] = str(dt)
+            birthdays[ctx.author.id] = str(dt)
             await self.config.birthdays.set(birthdays)
 
             await self._create_event(ctx, dt)
