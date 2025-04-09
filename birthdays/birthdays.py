@@ -142,7 +142,7 @@ class Birthdays(commands.Cog):
                 birthdays[ctx.author.id] = str(event.start_time.date())
                 await self.config.birthdays.set(birthdays)
             await self._create_event(ctx, self._parse_date(birthdays[ctx.author.id]))
-            await asyncio.sleep(.5)
+            await asyncio.sleep(1)
 
     @commands.command(name="bday", description="Set your birthday")
     async def set_birthday(self, ctx, date: str, member: discord.Member = None):
