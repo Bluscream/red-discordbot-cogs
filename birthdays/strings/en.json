@@ -7,6 +7,7 @@
     "error.skipping_invalid_birthday": "Skipping invalid birthday for {username}: {err}",
     "event.description": "Today is {nickname}'s birthday",
     "event.description1": "Happy Birthday!",
+    "event.description10": "{nickname}, sending you love and birthday wishes!",
     "event.description2": "Happy Birthday, friend!",
     "event.description3": "Happy Birthday, {nickname}!",
     "event.description4": "On your special day...",
@@ -15,7 +16,6 @@
     "event.description7": "{nickname}, here's to another amazing year ahead!",
     "event.description8": "May your birthday be as bright as your smile!",
     "event.description9": "Happy Birthday! May all your dreams come true!",
-    "event.description10": "{nickname}, sending you love and birthday wishes!",
     "event.location": "Discord",
     "event.name": "{username}'s Birthday",
     "message.birthday": "Happy birthday to {nickname} in {guild_name}!",
@@ -23,9 +23,10 @@
     "reason.event_recreate": "Recreating event",
     "response.birthday_set": "🎂 Your birthday has been set to **{month}/{day}**\n🎉 An event for your birthday has been created!",
     "response.days_until_birthday": "`{nickname}`: **{birthday}** (In {days} days)",
+    "response.finished_recreate": "Finished recreating {count} / {events} events",
     "response.invalid_date_format": "Invalid date! Please use DD MM format.",
     "response.no_birthdays": "No birthdays recorded yet!",
     "response.no_upcoming_birthdays": "No upcoming birthdays!",
     "response.ping": "Pong! The bot's latency is {latency}ms",
-    "response.finished_recreate": "Finished recreating {count} / {events} events"
+    "title.upcoming_birthdays": "## {birthdays} Birthdays:\n\n"
 }

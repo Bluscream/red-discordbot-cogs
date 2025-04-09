@@ -164,23 +164,18 @@ class Birthdays(commands.Cog):
 
     @commands.command(name="bday", description="Set your birthday")
     async def set_birthday(self, ctx, date: str, member: discord.Member = None):
-        
         if member:
             owner = await self.bot.is_owner(ctx.author)
             if not owner: return
             ctx.author = member
-
         try:
             dt_birthday = self._parse_date(date)
             birthdays = await self.config.birthdays()
             birthdays[ctx.author.id] = str(dt_birthday)
             await self.config.birthdays.set(birthdays)
-
             dt_next = self._get_next(dt_birthday)
             await self._create_event(ctx, dt_next)
-                
             await ctx.reply(lang.get("response.birthday_set").format(month=dt_birthday.month,day=dt_birthday.day))
-            
         except ValueError as err:
             log.error(err)
             await ctx.reply(lang.get("response.invalid_date_format"))
@@ -191,33 +186,26 @@ class Birthdays(commands.Cog):
         if not birthdays:
             await ctx.reply(lang.get("response.no_birthdays"))
             return
-
         today = datetime.now().date()
-        
         upcoming_birthdays = []
         for user_id, date_str in birthdays.items():
             member = ctx.guild.get_member(int(user_id))
             if not member:
                 continue
-                
             dt_birthday = datetime.strptime(date_str, "%Y-%m-%d")
             dt_next = self._get_next(dt_birthday)
             days_until = (dt_next - today).days
             birthday_str = dt_birthday.strftime('%d.%m.') if dt_birthday.year >= today.year else dt_birthday.strftime('%d.%m.%Y')
             upcoming_birthdays.append((days_until, member, birthday_str))
-            
         if not upcoming_birthdays:
             await ctx.reply(lang.get("response.no_upcoming_birthdays"))
             return
-            
         upcoming_birthdays.sort()
-        
-        response = "## Upcoming Birthdays:\n\n"
+        response = lang.get("title.upcoming_birthdays").format(birthdays=len(upcoming_birthdays))
         response += "\n".join(
             lang.get("response.days_until_birthday").format(nickname=member.nick or member.global_name or member.name, birthday=birthday_str, days=days)
             for days, member, birthday_str in upcoming_birthdays
         )
-        
         await ctx.reply(response)
 # endregion metods
 
