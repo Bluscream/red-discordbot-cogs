@@ -109,10 +109,14 @@ class Birthdays(commands.Cog):
                 continue
         raise ValueError(lang.get("error.invalid_date_format").format(date_str=date_str))
 
-    async def _create_event(self, ctx, dt: date):
-        """"""
+    def _get_next(self, dt: date):
         now = datetime.now()
         if dt <= date.today(): dt = date(now.year + 1, dt.month, dt.day) # Todo: wait for https://github.com/Rapptz/discord.py/pull/9685
+        return dt
+
+    async def _create_event(self, ctx, dt: date):
+        """"""
+        dt = 
         start = pytz.utc.localize(datetime.combine(dt, datetime.min.time()))
         end = pytz.utc.localize(datetime.combine(dt, datetime.max.time()))
         event_name = lang.get("event.name").format(username=ctx.author.name,nickname=ctx.author.nick or ctx.author.global_name,guild_name=ctx.guild.name)
@@ -153,21 +157,22 @@ class Birthdays(commands.Cog):
 
     @commands.command(name="bday", description="Set your birthday")
     async def set_birthday(self, ctx, date: str, member: discord.Member = None):
-        dt = self._parse_date(date)
-
+        
         if member:
             owner = await self.bot.is_owner(ctx.author)
             if not owner: return
             ctx.author = member
 
         try:
+            dt_birthday = self._parse_date(date)
             birthdays = await self.config.birthdays()
-            birthdays[ctx.author.id] = str(dt)
+            birthdays[ctx.author.id] = str(dt_birthday)
             await self.config.birthdays.set(birthdays)
 
-            await self._create_event(ctx, dt)
+            dt_next = self._get_next(dt_birthday)
+            await self._create_event(ctx, dt_next)
                 
-            await ctx.reply(lang.get("response.birthday_set").format(month=dt.month,day=dt.day))
+            await ctx.reply(lang.get("response.birthday_set").format(month=dt_birthday.month,day=dt_birthday.day))
             
         except ValueError as err:
             log.error(err)
@@ -181,7 +186,6 @@ class Birthdays(commands.Cog):
             return
 
         today = datetime.now()
-        next_year = today.replace(year=today.year + 1)
         
         upcoming_birthdays = []
         for user_id, date_str in birthdays.items():
@@ -189,14 +193,11 @@ class Birthdays(commands.Cog):
             if not member:
                 continue
                 
-            birthday = datetime.strptime(date_str, "%Y-%m-%d")
-            next_birthday = birthday.replace(year=today.year)
-            
-            if next_birthday < today:
-                next_birthday = next_birthday.replace(year=today.year + 1)
-                
-            days_until = (next_birthday - today).days
-            upcoming_birthdays.append((days_until, member, birthday))
+            dt_birthday = datetime.strptime(date_str, "%Y-%m-%d")
+            dt_next = self._get_next(dt_birthday)
+            days_until = (dt_next - today).days
+            birthday_str = dt_birthday.strftime('%d.%m.') if dt_birthday.year >= today.year else dt_birthday.strftime('%d.%m.%Y')
+            upcoming_birthdays.append((days_until, member, birthday_str))
             
         if not upcoming_birthdays:
             await ctx.reply(lang.get("response.no_upcoming_birthdays"))
@@ -204,10 +205,10 @@ class Birthdays(commands.Cog):
             
         upcoming_birthdays.sort()
         
-        response = "### Upcoming Birthdays:\n\n"
+        response = "## Upcoming Birthdays:\n\n"
         response += "\n".join(
-            lang.get("response.days_until_birthday").format(nickname=member.nick or member.global_name or member.name, birthday=birthday.strftime('%d.%m.%Y'), days=days)
-            for days, member, birthday in upcoming_birthdays
+            lang.get("response.days_until_birthday").format(nickname=member.nick or member.global_name or member.name, birthday=birthday_str, days=days)
+            for days, member, birthday_str in upcoming_birthdays
         )
         
         await ctx.reply(response)
