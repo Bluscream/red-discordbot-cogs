@@ -114,7 +114,7 @@ class Birthdays(commands.Cog):
                 await event.delete(reason=lang.get("reason.event_recreate").format(username=ctx.author.name,nickname=ctx.author.nick,guild_name=ctx.guild.name,botname=self.bot.user))
         return await ctx.guild.create_scheduled_event(
             name=event_name,
-            description=lang.get(f"event.description{randint(1, 10)}").format(username=ctx.author.name,nickname=ctx.author.nick,guild_name=ctx.guild.name)+f"\nbirthday:{ctx.author.id}",
+            description=lang.get(f"event.description{randint(1, 10)}").format(username=ctx.author.name,nickname=ctx.author.nick,guild_name=ctx.guild.name)+f"\n\nbirthday:{ctx.author.id}",
             start_time=start,
             end_time=end,
             privacy_level=discord.PrivacyLevel.guild_only,
