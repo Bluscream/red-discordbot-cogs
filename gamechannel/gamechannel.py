@@ -108,9 +108,64 @@ class GameChannel(commands.Cog):
                     f"No game requirement set for {channel.mention}"
                 )
 
+    @game_channel.command(name="check")
+    async def gamechannel_check(self, ctx: commands.Context):
+        """Check all users in game-restricted voice channels and remove those not playing the required game."""
+        if not ctx.guild:
+            await ctx.send("This command can only be used in a server.")
+            return
+        
+        removed_users = 0
+        checked_channels = 0
+        
+        # Get all guilds if command is used by bot owner, otherwise just the current guild
+        guilds = self.bot.guilds if await self.bot.is_owner(ctx.author) else [ctx.guild]
+        
+        status_message = await ctx.send("Checking voice channels for users not playing required games...")
+        
+        for guild in guilds:
+            channels = await self.config.guild(guild).channels()
+            if not channels:
+                continue
+                
+            for channel_id, required_game_id in channels.items():
+                channel = guild.get_channel(int(channel_id))
+                if not channel or not isinstance(channel, discord.VoiceChannel):
+                    continue
+                    
+                checked_channels += 1
+                
+                for member in channel.members:
+                    activities = [
+                        str(activity.application_id) 
+                        for activity in member.activities 
+                        if isinstance(activity, discord.Activity) and activity.application_id
+                    ]
+                    
+                    if required_game_id not in activities:
+                        try:
+                            await member.send(f"You were removed from {channel.mention} because you weren't playing the required game.")
+                        except discord.Forbidden:
+                            pass
+                            
+                        try:
+                            await member.edit(voice_channel=None)
+                            removed_users += 1
+                        except discord.Forbidden:
+                            log.warning(f"Could not remove {member} from {channel} in {guild} due to permissions.")
+        
+        await status_message.delete()
+        await ctx.send(
+            f"Check complete! Checked {checked_channels} channels across {len(guilds)} "
+            f"servers and removed {removed_users} users not playing required games."
+        )
+
     @game_channel.command(name="list")
     async def gamechannel_list(self, ctx: commands.Context):
         """List all voice channels with game requirements."""
+        if not ctx.guild:
+            await ctx.send("This command can only be used in a server.")
+            return
         channels = await self.config.guild(ctx.guild).channels()
         if not channels:
             await ctx.send("No voice channels have game requirements set.")
