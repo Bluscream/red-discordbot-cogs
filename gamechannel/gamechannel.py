@@ -32,6 +32,10 @@ class GameChannel(commands.Cog):
         "channels": {}
     }
 
+    default_guild_settings: ClassVar[dict[int, str]] = {
+        "channels": {}
+    }
+
     def __init__(self, bot: Red) -> None:
         """Set up the cog."""
         super().__init__()
@@ -40,7 +44,7 @@ class GameChannel(commands.Cog):
             self, identifier=1884366863, force_registration=True
         )
         self.config.register_global(**self.default_global_settings)
-        # self.config.register_guild(**self.default_guild_settings)
+        self.config.register_guild(**self.default_guild_settings)
         self.bucket_member_join_cache = commands.CooldownMapping.from_cooldown(
             1, 300, lambda member: member
         )
