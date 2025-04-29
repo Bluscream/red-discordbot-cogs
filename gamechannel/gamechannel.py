@@ -29,7 +29,7 @@ class GameChannel(commands.Cog):
 
     default_global_settings: ClassVar[dict[str, int] | dict[str, dict[int, str]]] = {
         "schema_version": 0,
-        "gamechannels": {}
+        "channels": {}
     }
 
     def __init__(self, bot: Red) -> None:
@@ -76,23 +76,56 @@ class GameChannel(commands.Cog):
 
 # region methods
 
-    @commands.command(name="gchan", description="Set Game Channel")
-    async def set_gamechannel(self, ctx, channel: int, game: str):
-        if member:
-            owner = await self.bot.is_owner(ctx.author)
-            if not owner: return
-            ctx.author = member
-        try:
-            dt_birthday = self._parse_date(date)
-            birthdays = await self.config.birthdays()
-            birthdays[ctx.author.id] = str(dt_birthday)
-            await self.config.birthdays.set(birthdays)
-            dt_next = self._get_next(dt_birthday)
-            await self._create_event(ctx, dt_next)
-            await ctx.reply(lang.get("response.birthday_set").format(month=dt_birthday.month,day=dt_birthday.day))
-        except ValueError as err:
-            log.error(err)
-            await ctx.reply(lang.get("response.invalid_date_format"))
+# lang.get("response.birthday_set").format(month=dt_birthday.month,day=dt_birthday.day)
+
+    @checks.admin_or_permissions(manage_channels=True)
+    @commands.group(name="gamechannel", aliases=["gc"])
+    async def game_channel(self, ctx: commands.Context):
+        """Manage voice channel game requirements."""
+        pass
+
+    @game_channel.command(name="set")
+    async def set_gamechannel(self, ctx: commands.Context, channel: discord.VoiceChannel, game_id: str = None):
+        """Set a required game for a voice channel."""
+        if not game_id: return await self.remove_gamechannel(self, ctx, channel)
+        async with self.config.guild(ctx.guild).channels() as channels:
+            channels[str(channel.id)] = game_id
+        
+        await ctx.send(
+            f"Set game requirement for {channel.mention}: "
+            f"Application ID {game_id}"
+        )
+
+    @game_channel.command(name="remove")
+    async def remove_gamechannel(self, ctx: commands.Context, channel: discord.VoiceChannel):
+        """Remove game requirement from a voice channel."""
+        async with self.config.guild(ctx.guild).channels() as channels:
+            if str(channel.id) in channels:
+                del channels[str(channel.id)]
+                await ctx.send(f"Removed game requirement from {channel.mention}")
+            else:
+                await ctx.send(
+                    f"No game requirement set for {channel.mention}"
+                )
+
+    @game_channel.command(name="list")
+    async def gamechannel_list(self, ctx: commands.Context):
+        """List all voice channels with game requirements."""
+        channels = await self.config.guild(ctx.guild).channels()
+        if not channels:
+            await ctx.send("No voice channels have game requirements set.")
+            return
+        
+        embed = discord.Embed(title="Voice Channel Game Requirements")
+        for channel_id, game_id in channels.items():
+            channel = ctx.guild.get_channel(int(channel_id))
+            if channel:
+                embed.add_field(
+                    name=f"{channel.mention}",
+                    value=f"Required Game ID: {game_id}",
+                    inline=False
+                )
+        await ctx.send(embed=embed)
             
 # endregion metods
 
@@ -104,35 +137,35 @@ class GameChannel(commands.Cog):
         before: discord.VoiceState,
         after: discord.VoiceState
     ):
-        # Check if the update involves joining the specified voice channel
-        target_channel_id = 1366803519511859252
-        if after.channel and after.channel.id == target_channel_id:
-            # Get the member's current activity
-            activities = [
-                activity.application_id 
-                for activity in member.activities 
-                if isinstance(activity, discord.Activity)
-            ]
-            
-            # Check if the required game is being played
-            required_game_id = "1306357637893587014"
-            if required_game_id not in activities:
-                # Send DM explaining why they're being moved
-                try:
-                    await member.send(
-                        "You were removed from the voice channel because you weren't "
-                        "playing the required game."
-                    )
-                except discord.Forbidden:
-                    # Handle cases where DMs aren't possible
-                    pass
-                
-                # Move the member to a default channel (or disconnect them)
-                default_channel = member.guild.afk_channel
-                if default_channel:
-                    await member.move_to(default_channel)
-                else:
-                    await member.edit(voice_state=None)
+        if not after.channel:
+            return
+
+        guild_config = self.config.guild(member.guild)
+        channels = await guild_config.channels()
+        
+        if str(after.channel.id) not in channels:
+            return
+
+        required_game_id = channels[str(after.channel.id)]
+        
+        activities = [
+            activity.application_id 
+            for activity in member.activities 
+            if isinstance(activity, discord.Activity)
+        ]
+        
+        if required_game_id not in activities:
+            try:
+                await member.send(f"You were removed from {after.channel.mention} because you weren't playing the required game.")
+            except discord.Forbidden:
+                pass
+
+            # Move the member to a default channel (or disconnect them)
+            # default_channel = member.guild.afk_channel
+            # if default_channel:
+            #     await member.move_to(default_channel)
+            # else:
+            await member.edit(voice_state=None)
 # endregion events
 
     @staticmethod
