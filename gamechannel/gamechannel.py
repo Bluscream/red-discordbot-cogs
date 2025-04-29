@@ -82,6 +82,14 @@ class GameChannel(commands.Cog):
 
 # lang.get("response.birthday_set").format(month=dt_birthday.month,day=dt_birthday.day)
 
+    async def update_channel_settings(self, guild_id: int, channel_id: int, game_id: str):
+        async with self.config.guild(guild_id).channels() as channels:
+            channels[str(channel_id)] = game_id
+
+    async def remove_channel_settings(self, guild_id: int, channel_id: int):
+        async with self.config.guild(guild_id).channels() as channels:
+            channels.pop(str(channel_id), None)
+
     @checks.admin_or_permissions(manage_channels=True)
     @commands.group(name="gamechannel", aliases=["gc"])
     async def game_channel(self, ctx: commands.Context):
@@ -92,8 +100,7 @@ class GameChannel(commands.Cog):
     async def set_gamechannel(self, ctx: commands.Context, channel: discord.VoiceChannel, game_id: str = None):
         """Set a required game for a voice channel."""
         if not game_id: return await self.remove_gamechannel(self, ctx, channel)
-        async with self.config.guild(ctx.guild).channels() as channels:
-            channels[str(channel.id)] = game_id
+        await self.update_channel_settings(ctx.guild.id, channel.id, game_id)
         
         await ctx.send(
             f"Set game requirement for {channel.mention}: "
@@ -105,7 +112,7 @@ class GameChannel(commands.Cog):
         """Remove game requirement from a voice channel."""
         async with self.config.guild(ctx.guild).channels() as channels:
             if str(channel.id) in channels:
-                del channels[str(channel.id)]
+                await self.remove_channel_settings(ctx.guild.id, channel.id)
                 await ctx.send(f"Removed game requirement from {channel.mention}")
             else:
                 await ctx.send(
