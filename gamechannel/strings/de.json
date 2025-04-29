@@ -1,0 +1,5 @@
+{
+  "bot.connected": "{self_user} hat sich mit Discord verbunden!",
+  "bot.failed": "Bot konnte nicht gestartet werden: {err}",
+  "bot.ready": "{self_user} ist bereit für Events!"
+}
