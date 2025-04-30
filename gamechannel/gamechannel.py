@@ -199,13 +199,14 @@ class GameChannel(commands.Cog):
         if not after.channel:
             return
 
+        channel_id = str(after.channel.id)
+
         guild_config = self.config.guild(member.guild)
         channels = await guild_config.channels()
         
-        if after.channel.id not in channels:
-            return
+        if channel_id not in channels: return
 
-        required_game_id = channels[after.channel.id]
+        required_game_id = int(channels[channel_id])
         log.info(required_game_id)
         
         activities = [ activity.application_id for activity in member.activities ] # if isinstance(activity, discord.Activity)
