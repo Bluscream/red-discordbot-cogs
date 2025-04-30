@@ -222,6 +222,7 @@ class GameChannel(commands.Cog):
             if isinstance(activity, discord.Activity)
         ]
         log.info(member.activities)
+        log.info(activities)
         
         if required_game_id not in activities:
             chan = after.channel.mention
