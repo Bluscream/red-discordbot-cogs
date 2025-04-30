@@ -221,17 +221,17 @@ class GameChannel(commands.Cog):
         ]
         
         if required_game_id not in activities:
-            try:
-                await member.send(f"You were removed from {after.channel.mention} because you weren't playing the required game.")
-            except discord.Forbidden:
-                pass
-
             # Move the member to a default channel (or disconnect them)
             # default_channel = member.guild.afk_channel
             # if default_channel:
             #     await member.move_to(default_channel)
             # else:
-            await member.edit(voice_state=None)
+            await member.edit(voice_channel=None)
+            
+            try:
+                await member.send(f"You were removed from {after.channel.mention} because you weren't playing the required game.")
+            except discord.Forbidden:
+                pass
 # endregion events
 
     @staticmethod
