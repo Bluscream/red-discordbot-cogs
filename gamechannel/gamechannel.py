@@ -221,7 +221,7 @@ class GameChannel(commands.Cog):
             for activity in member.activities 
             if isinstance(activity, discord.Activity)
         ]
-        log.info(dumps(member.activities))
+        log.info(member.activities)
         
         if required_game_id not in activities:
             # Move the member to a default channel (or disconnect them)
