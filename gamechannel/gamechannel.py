@@ -216,11 +216,7 @@ class GameChannel(commands.Cog):
         required_game_id = channels[str(after.channel.id)]
         log.info(required_game_id)
         
-        activities = [
-            activity.application_id 
-            for activity in member.activities 
-            if isinstance(activity, discord.Activity)
-        ]
+        activities = [ activity.application_id for activity in member.activities ] # if isinstance(activity, discord.Activity)
         log.info(member.activities)
         log.info(activities)
         
