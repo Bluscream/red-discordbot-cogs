@@ -5,6 +5,7 @@ from typing import Any, ClassVar
 from datetime import date, datetime
 from logging import getLogger
 from random import randint, choice
+from json import dumps
 
 import discord, pytz, os
 from discord.ext import tasks # commands
@@ -213,12 +214,14 @@ class GameChannel(commands.Cog):
             return
 
         required_game_id = channels[str(after.channel.id)]
+        log.info(required_game_id)
         
         activities = [
             activity.application_id 
             for activity in member.activities 
             if isinstance(activity, discord.Activity)
         ]
+        log.info(dumps(member.activities))
         
         if required_game_id not in activities:
             # Move the member to a default channel (or disconnect them)
@@ -227,7 +230,7 @@ class GameChannel(commands.Cog):
             #     await member.move_to(default_channel)
             # else:
             await member.edit(voice_channel=None)
-            
+
             try:
                 await member.send(f"You were removed from {after.channel.mention} because you weren't playing the required game.")
             except discord.Forbidden:
