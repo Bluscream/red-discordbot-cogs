@@ -59,10 +59,6 @@ class GameChannel(commands.Cog):
         return f"{pre_processed}\n\nCog Version: {self.__version__}"
 
     async def red_delete_data_for_user(self, *, _requester: str, _user_id: int) -> None:
-        birthdays = await self.config.birthdays()
-        if _user_id in birthdays:
-            del birthdays[ctx.author.id]
-            await self.config.birthdays.set(birthdays)
         return
 
     #
@@ -100,7 +96,7 @@ class GameChannel(commands.Cog):
     async def set_gamechannel(self, ctx: commands.Context, channel: discord.VoiceChannel, game_id: str = None):
         """Set a required game for a voice channel."""
         if not game_id: return await self.remove_gamechannel(self, ctx, channel)
-        await self.update_channel_settings(ctx.guild.id, channel.id, game_id)
+        await self.update_channel_settings(ctx.guild, channel.id, game_id)
         
         await ctx.send(
             f"Set game requirement for {channel.mention}: "
