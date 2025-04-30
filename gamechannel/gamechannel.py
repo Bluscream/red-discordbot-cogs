@@ -28,12 +28,11 @@ class GameChannel(commands.Cog):
     __author__ = "Bluscream"
     __version__ = "1.0.0"
 
-    default_global_settings: ClassVar[dict[str, int] | dict[str, dict[int, str]]] = {
-        "schema_version": 0,
-        "channels": {}
+    default_global_settings: ClassVar[dict[str, int]] = {
+        "schema_version": 0
     }
 
-    default_guild_settings: ClassVar[dict[int, str]] = {
+    default_guild_settings: ClassVar[dict[str, dict[int, int]]] = {
         "channels": {}
     }
 
@@ -83,13 +82,13 @@ class GameChannel(commands.Cog):
 
 # lang.get("response.birthday_set").format(month=dt_birthday.month,day=dt_birthday.day)
 
-    async def update_channel_settings(self, guild_id: int, channel_id: int, game_id: str):
+    async def update_channel_settings(self, guild_id: int, channel_id: int, game_id: int):
         async with self.config.guild(guild_id).channels() as channels:
-            channels[str(channel_id)] = game_id
+            channels[channel_id] = game_id
 
     async def remove_channel_settings(self, guild_id: int, channel_id: int):
         async with self.config.guild(guild_id).channels() as channels:
-            channels.pop(str(channel_id), None)
+            channels.pop(channel_id, None)
 
     @checks.admin_or_permissions(manage_channels=True)
     @commands.group(name="gamechannel", aliases=["gc"])
@@ -112,7 +111,7 @@ class GameChannel(commands.Cog):
     async def remove_gamechannel(self, ctx: commands.Context, channel: discord.VoiceChannel):
         """Remove game requirement from a voice channel."""
         async with self.config.guild(ctx.guild).channels() as channels:
-            if str(channel.id) in channels:
+            if channel.id in channels:
                 await self.remove_channel_settings(ctx.guild.id, channel.id)
                 await ctx.send(f"Removed game requirement from {channel.mention}")
             else:
@@ -149,7 +148,7 @@ class GameChannel(commands.Cog):
                 
                 for member in channel.members:
                     activities = [
-                        str(activity.application_id) 
+                        activity.application_id 
                         for activity in member.activities 
                         if isinstance(activity, discord.Activity) and activity.application_id
                     ]
@@ -167,10 +166,7 @@ class GameChannel(commands.Cog):
                             log.warning(f"Could not remove {member} from {channel} in {guild} due to permissions.")
         
         await status_message.delete()
-        await ctx.send(
-            f"Check complete! Checked {checked_channels} channels across {len(guilds)} "
-            f"servers and removed {removed_users} users not playing required games."
-        )
+        await ctx.send(f"Check complete! Checked {checked_channels} channels across {len(guilds)} servers and removed {removed_users} users not playing required games.")
 
     @game_channel.command(name="list")
     async def gamechannel_list(self, ctx: commands.Context):
@@ -210,10 +206,10 @@ class GameChannel(commands.Cog):
         guild_config = self.config.guild(member.guild)
         channels = await guild_config.channels()
         
-        if str(after.channel.id) not in channels:
+        if after.channel.id not in channels:
             return
 
-        required_game_id = channels[str(after.channel.id)]
+        required_game_id = channels[after.channel.id]
         log.info(required_game_id)
         
         activities = [ activity.application_id for activity in member.activities ] # if isinstance(activity, discord.Activity)
