@@ -207,11 +207,10 @@ class GameChannel(commands.Cog):
         if channel_id not in channels: return
 
         required_game_id = int(channels[channel_id])
-        log.info(required_game_id)
         
         activities = [ activity.application_id for activity in member.activities if isinstance(activity, discord.Activity) ]
-        log.info(member.activities)
-        log.info(activities)
+
+        log.info(f"[#{channel_id}] @{member.id}: {required_game_id} in {activities} == {required_game_id in activities}")
         
         if required_game_id not in activities:
             chan = after.channel.mention
