@@ -219,31 +219,36 @@ class GameChannel(commands.Cog):
         """Add a game requirement to a channel."""
         guild_config = self.config.guild_from_id(guild_id)
         async with guild_config.channels() as channels:
-            if channel_id not in channels:
-                channels[channel_id] = []
-            if game_id not in channels[channel_id]:
-                channels[channel_id].append(game_id)
+            # Use string key for consistency
+            channel_key = str(channel_id)
+            if channel_key not in channels:
+                channels[channel_key] = []
+            if game_id not in channels[channel_key]:
+                channels[channel_key].append(game_id)
 
     async def remove_game_from_channel(self, guild_id: int, channel_id: int, game_id: int):
         """Remove a specific game requirement from a channel."""
         guild_config = self.config.guild_from_id(guild_id)
         async with guild_config.channels() as channels:
-            if channel_id in channels and game_id in channels[channel_id]:
-                channels[channel_id].remove(game_id)
-                if not channels[channel_id]:  # Remove channel if no games left
-                    channels.pop(channel_id, None)
+            channel_key = str(channel_id)
+            if channel_key in channels and game_id in channels[channel_key]:
+                channels[channel_key].remove(game_id)
+                if not channels[channel_key]:  # Remove channel if no games left
+                    channels.pop(channel_key, None)
 
     async def remove_all_games_from_channel(self, guild_id: int, channel_id: int):
         """Remove all game requirements from a channel."""
         guild_config = self.config.guild_from_id(guild_id)
         async with guild_config.channels() as channels:
-            channels.pop(channel_id, None)
+            channel_key = str(channel_id)
+            channels.pop(channel_key, None)
 
     async def get_channel_games(self, guild_id: int, channel_id: int) -> List[int]:
         """Get all game IDs for a channel."""
         guild_config = self.config.guild_from_id(guild_id)
         channels = await guild_config.channels()
-        return channels.get(channel_id, [])
+        # Use string key for consistency
+        return channels.get(str(channel_id), [])
 
     def game_info_str(self, game_info: Optional[Dict], game_id: int) -> str:
         """Format game information as 'Name (ID)' or 'ID' if no info available."""
@@ -740,6 +745,115 @@ class GameChannel(commands.Cog):
         
         await ctx.send(success(f"Backup created for {len(backup_data)} guilds with game channel configurations."))
         log.info(f"Manual backup created for {len(backup_data)} guilds")
+
+    @game_channel.command(name="debug")
+    @checks.is_owner()
+    async def debug_info(self, ctx: commands.Context, channel: discord.VoiceChannel):
+        """Debug information for a specific channel (Bot Owner only)."""
+        channel_games = await self.get_channel_games(ctx.guild.id, channel.id)
+        
+        embed = discord.Embed(
+            title=f"Debug Info for {channel.mention}",
+            color=discord.Color.blue()
+        )
+        
+        embed.add_field(name="Channel ID", value=str(channel.id), inline=True)
+        embed.add_field(name="Guild ID", value=str(ctx.guild.id), inline=True)
+        embed.add_field(name="Game Count", value=str(len(channel_games)), inline=True)
+        
+        if channel_games:
+            embed.add_field(name="Game IDs", value=", ".join(map(str, channel_games)), inline=False)
+            
+            # Check cache status
+            games_cache = await self._fetch_detectable_games()
+            cache_status = "Loaded" if games_cache and games_cache.get("by_id") else "Not loaded"
+            embed.add_field(name="Cache Status", value=cache_status, inline=True)
+            
+            if games_cache and games_cache.get("by_id"):
+                found_games = []
+                missing_games = []
+                for game_id in channel_games:
+                    game_info = await self.get_game_info(game_id)
+                    if game_info:
+                        found_games.append(f"{game_info['name']} ({game_id})")
+                    else:
+                        missing_games.append(str(game_id))
+                
+                if found_games:
+                    embed.add_field(name="Found Games", value="\n".join(found_games[:5]), inline=False)
+                if missing_games:
+                    embed.add_field(name="Missing Games", value=", ".join(missing_games), inline=False)
+        else:
+            embed.add_field(name="Status", value="No games assigned", inline=False)
+        
+        await ctx.send(embed=embed)
+
+    @game_channel.command(name="purge")
+    @checks.is_owner()
+    async def purge_config(self, ctx: commands.Context):
+        """Completely purge all configuration data (Bot Owner only)."""
+        await ctx.send("⚠️ **WARNING**: This will completely delete ALL game channel configurations across ALL servers. This action cannot be undone!\n\nType `CONFIRM PURGE` to proceed or anything else to cancel.")
+        
+        def check(message):
+            return (message.author == ctx.author and 
+                   message.channel == ctx.channel)
+        
+        try:
+            response = await self.bot.wait_for('message', check=check, timeout=30.0)
+            if response.content != 'CONFIRM PURGE':
+                await ctx.send("Purge cancelled.")
+                return
+        except asyncio.TimeoutError:
+            await ctx.send("Purge cancelled due to timeout.")
+            return
+        
+        try:
+            purged_guilds = 0
+            purged_channels = 0
+            
+            # Purge all guild configurations
+            for guild in self.bot.guilds:
+                try:
+                    guild_config = self.config.guild(guild)
+                    channels = await guild_config.channels()
+                    
+                    if channels:
+                        channel_count = len(channels)
+                        await guild_config.channels.set({})
+                        purged_guilds += 1
+                        purged_channels += channel_count
+                        log.info(f"Purged {guild.name}: {channel_count} channels")
+                        
+                except Exception as e:
+                    log.error(f"Error purging guild {guild.name}: {e}")
+                    continue
+            
+            # Reset schema version
+            await self.config.schema_version.set(0)
+            
+            # Clear backup data
+            await self.config.backup_data.set({})
+            
+            # Clear game cache
+            self._detectable_games_cache = None
+            self._cache_expiry = None
+            
+            embed = discord.Embed(
+                title="Configuration Purged",
+                description="All game channel configurations have been completely removed.",
+                color=discord.Color.red()
+            )
+            embed.add_field(name="Guilds Affected", value=str(purged_guilds), inline=True)
+            embed.add_field(name="Channels Purged", value=str(purged_channels), inline=True)
+            embed.add_field(name="Schema Version", value="Reset to 0", inline=True)
+            embed.add_field(name="Cache Status", value="Cleared", inline=True)
+            
+            await ctx.send(embed=embed)
+            log.info(f"Configuration purged: {purged_guilds} guilds, {purged_channels} channels")
+            
+        except Exception as e:
+            await ctx.send(error(f"Purge failed: {e}"))
+            log.error(f"Configuration purge failed: {e}")
             
 # endregion metods
 
