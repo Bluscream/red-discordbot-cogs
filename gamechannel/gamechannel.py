@@ -426,6 +426,133 @@ class GameChannel(commands.Cog):
             embed.add_field(name="Executables", value=exe_text, inline=False)
         
         await ctx.send(embed=embed)
+
+    @game_channel.command(name="reload")
+    async def reload_cache(self, ctx: commands.Context):
+        """Reload the game cache from Discord's API."""
+        await ctx.send("Reloading game cache...")
+        
+        # Clear the cache to force a reload
+        self._detectable_games_cache = None
+        self._cache_expiry = None
+        
+        # Fetch fresh data
+        games_cache = await self._fetch_detectable_games()
+        
+        if games_cache and games_cache.get("by_id"):
+            game_count = len(games_cache["by_id"])
+            await ctx.send(success(f"Successfully reloaded game cache with {game_count} games."))
+        else:
+            await ctx.send(error("Failed to reload game cache. Check the logs for details."))
+
+    @game_channel.command(name="cache")
+    async def cache_info(self, ctx: commands.Context):
+        """Show information about the current game cache."""
+        if self._detectable_games_cache is None:
+            await ctx.send(info("Game cache is empty. Use `{ctx.prefix}gc reload` to load games."))
+            return
+        
+        game_count = len(self._detectable_games_cache.get("by_id", {}))
+        cache_age = "Unknown"
+        
+        if self._cache_expiry:
+            time_remaining = self._cache_expiry - datetime.now()
+            if time_remaining.total_seconds() > 0:
+                hours, remainder = divmod(int(time_remaining.total_seconds()), 3600)
+                minutes, _ = divmod(remainder, 60)
+                cache_age = f"{hours}h {minutes}m remaining"
+            else:
+                cache_age = "Expired"
+        
+        embed = discord.Embed(
+            title="Game Cache Information",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Games Cached", value=str(game_count), inline=True)
+        embed.add_field(name="Cache Status", value=cache_age, inline=True)
+        embed.add_field(name="API Endpoint", value=detectable_api_url, inline=False)
+        
+        await ctx.send(embed=embed)
+
+    @game_channel.command(name="find")
+    async def find_games(self, ctx: commands.Context, *, query: str):
+        """Search the game cache with detailed results."""
+        if len(query) < 2:
+            await ctx.send(error("Query must be at least 2 characters long."))
+            return
+        
+        # Ensure cache is loaded
+        games_cache = await self._fetch_detectable_games()
+        if not games_cache or not games_cache.get("by_id"):
+            await ctx.send(error("Game cache is not available. Use `{ctx.prefix}gc reload` to load games."))
+            return
+        
+        # Search for games
+        query_lower = query.lower()
+        matches = []
+        
+        for game in games_cache["by_id"].values():
+            # Check name match
+            name_match = query_lower in game["name"].lower()
+            # Check alias matches
+            alias_matches = any(query_lower in alias.lower() for alias in game.get("aliases", []))
+            
+            if name_match or alias_matches:
+                # Calculate match score (exact name match gets higher score)
+                score = 0
+                if game["name"].lower() == query_lower:
+                    score = 100  # Exact name match
+                elif game["name"].lower().startswith(query_lower):
+                    score = 80   # Name starts with query
+                elif name_match:
+                    score = 60   # Name contains query
+                elif alias_matches:
+                    score = 40   # Alias contains query
+                
+                matches.append((score, game))
+        
+        # Sort by score (highest first) and limit results
+        matches.sort(key=lambda x: x[0], reverse=True)
+        matches = matches[:15]  # Limit to 15 results
+        
+        if not matches:
+            await ctx.send(error(f"No games found matching '{query}'."))
+            return
+        
+        # Create embed with results
+        embed = discord.Embed(
+            title=f"Game Search Results for '{query}'",
+            description=f"Found {len(matches)} game(s)",
+            color=discord.Color.green()
+        )
+        
+        for score, game in matches:
+            # Format game info
+            themes = ", ".join(game.get("themes", [])) if game.get("themes") else "No themes"
+            aliases = ", ".join(game.get("aliases", [])) if game.get("aliases") else "No aliases"
+            
+            # Create field value
+            field_value = f"**ID:** {game['id']}\n"
+            field_value += f"**Themes:** {themes}\n"
+            if aliases != "No aliases":
+                field_value += f"**Aliases:** {aliases}\n"
+            field_value += f"**Overlay:** {'Yes' if game.get('overlay') else 'No'} | "
+            field_value += f"**Hook:** {'Yes' if game.get('hook') else 'No'}"
+            
+            # Truncate if too long
+            if len(field_value) > 1000:
+                field_value = field_value[:997] + "..."
+            
+            embed.add_field(
+                name=f"{game['name']} (Score: {score})",
+                value=field_value,
+                inline=False
+            )
+        
+        # Add footer with usage info
+        embed.set_footer(text=f"Use '{ctx.prefix}gc add <channel> <game_name>' to add a game to a channel")
+        
+        await ctx.send(embed=embed)
             
 # endregion metods
 
