@@ -519,7 +519,9 @@ class GameChannel(commands.Cog):
         
         if game_info.get("executables"):
             exe_names = [exe["name"] for exe in game_info["executables"][:5]]  # Limit to 5
-            exe_text = ", ".join(exe_names)
+            # Format each executable name with backticks and escape existing backticks
+            formatted_exes = [f"`{exe_name.replace('`', '\\`')}`" for exe_name in exe_names]
+            exe_text = ", ".join(formatted_exes)
             if len(game_info["executables"]) > 5:
                 exe_text += f" (+{len(game_info['executables']) - 5} more)"
             embed.add_field(name="Executables", value=exe_text, inline=False)
