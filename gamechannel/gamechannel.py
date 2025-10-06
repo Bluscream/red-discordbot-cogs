@@ -217,7 +217,8 @@ class GameChannel(commands.Cog):
 
     async def add_game_to_channel(self, guild_id: int, channel_id: int, game_id: int):
         """Add a game requirement to a channel."""
-        async with self.config.guild(guild_id).channels() as channels:
+        guild_config = self.config.guild_from_id(guild_id)
+        async with guild_config.channels() as channels:
             if channel_id not in channels:
                 channels[channel_id] = []
             if game_id not in channels[channel_id]:
@@ -225,7 +226,8 @@ class GameChannel(commands.Cog):
 
     async def remove_game_from_channel(self, guild_id: int, channel_id: int, game_id: int):
         """Remove a specific game requirement from a channel."""
-        async with self.config.guild(guild_id).channels() as channels:
+        guild_config = self.config.guild_from_id(guild_id)
+        async with guild_config.channels() as channels:
             if channel_id in channels and game_id in channels[channel_id]:
                 channels[channel_id].remove(game_id)
                 if not channels[channel_id]:  # Remove channel if no games left
@@ -233,12 +235,14 @@ class GameChannel(commands.Cog):
 
     async def remove_all_games_from_channel(self, guild_id: int, channel_id: int):
         """Remove all game requirements from a channel."""
-        async with self.config.guild(guild_id).channels() as channels:
+        guild_config = self.config.guild_from_id(guild_id)
+        async with guild_config.channels() as channels:
             channels.pop(channel_id, None)
 
     async def get_channel_games(self, guild_id: int, channel_id: int) -> List[int]:
         """Get all game IDs for a channel."""
-        channels = await self.config.guild(guild_id).channels()
+        guild_config = self.config.guild_from_id(guild_id)
+        channels = await guild_config.channels()
         return channels.get(channel_id, [])
 
     def game_info_str(self, game_info: Optional[Dict], game_id: int) -> str:
