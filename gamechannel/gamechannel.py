@@ -1,11 +1,13 @@
 """GameChannel cog for Red-DiscordBot"""
 
 from contextlib import suppress
-from typing import Any, ClassVar
-from datetime import date, datetime
+from typing import Any, ClassVar, List, Dict, Optional, Union
+from datetime import date, datetime, timedelta
 from logging import getLogger
 from random import randint, choice
-from json import dumps
+from json import dumps, loads
+import asyncio
+import aiohttp
 
 import discord, pytz, os
 from discord.ext import tasks # commands
@@ -20,6 +22,8 @@ log = getLogger("red.blu.gamechannel")
 from .strings import Strings
 lang = Strings('de')
 
+detectable_schema_url = "https://bluscream.github.io/discord-games/detectable.schema.json"
+detectable_api_url = "https://discord.com/api/v9/applications/detectable"
 
 class GameChannel(commands.Cog):
     """
@@ -32,7 +36,7 @@ class GameChannel(commands.Cog):
         "schema_version": 0
     }
 
-    default_guild_settings: ClassVar[dict[str, dict[int, int]]] = {
+    default_guild_settings: ClassVar[dict[str, dict[int, List[int]]]] = {
         "channels": {}
     }
 
@@ -48,6 +52,8 @@ class GameChannel(commands.Cog):
         self.bucket_member_join_cache = commands.CooldownMapping.from_cooldown(
             1, 300, lambda member: member
         )
+        self._detectable_games_cache: Optional[Dict[str, Dict]] = None
+        self._cache_expiry: Optional[datetime] = None
 
     #
     # Red methods
@@ -73,18 +79,113 @@ class GameChannel(commands.Cog):
         """Perform some configuration migrations."""
         schema_version = await self.config.schema_version()
 
+    async def _fetch_detectable_games(self) -> Dict[str, Dict]:
+        """Fetch detectable games from Discord API with caching."""
+        if (self._detectable_games_cache is not None and 
+            self._cache_expiry is not None and 
+            datetime.now() < self._cache_expiry):
+            return self._detectable_games_cache
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(detectable_api_url) as response:
+                    if response.status == 200:
+                        games_data = await response.json()
+                        # Create lookup dictionaries for faster searching
+                        games_by_id = {game["id"]: game for game in games_data}
+                        games_by_name = {game["name"].lower(): game for game in games_data}
+                        
+                        # Add aliases to name lookup
+                        for game in games_data:
+                            for alias in game.get("aliases", []):
+                                games_by_name[alias.lower()] = game
+                        
+                        self._detectable_games_cache = {
+                            "by_id": games_by_id,
+                            "by_name": games_by_name
+                        }
+                        # Cache for 1 hour
+                        self._cache_expiry = datetime.now() + timedelta(hours=1)
+                        return self._detectable_games_cache
+                    else:
+                        log.error(f"Failed to fetch detectable games: {response.status}")
+                        return {"by_id": {}, "by_name": {}}
+        except Exception as e:
+            log.error(f"Error fetching detectable games: {e}")
+            return {"by_id": {}, "by_name": {}}
+
+    async def resolve_game_id(self, game_input: str) -> Optional[int]:
+        """Resolve a game name or ID to a game ID."""
+        games_cache = await self._fetch_detectable_games()
+        
+        # Try as direct ID first
+        if game_input.isdigit():
+            if game_input in games_cache["by_id"]:
+                return int(game_input)
+        
+        # Try as name (case insensitive)
+        game_input_lower = game_input.lower()
+        if game_input_lower in games_cache["by_name"]:
+            return int(games_cache["by_name"][game_input_lower]["id"])
+        
+        return None
+
+    async def get_game_info(self, game_id: int) -> Optional[Dict]:
+        """Get game information by ID."""
+        games_cache = await self._fetch_detectable_games()
+        return games_cache["by_id"].get(str(game_id))
+
+    async def search_games(self, query: str, limit: int = 10) -> List[Dict]:
+        """Search for games by name or alias."""
+        games_cache = await self._fetch_detectable_games()
+        query_lower = query.lower()
+        matches = []
+        
+        for game in games_cache["by_id"].values():
+            if (query_lower in game["name"].lower() or 
+                any(query_lower in alias.lower() for alias in game.get("aliases", []))):
+                matches.append(game)
+                if len(matches) >= limit:
+                    break
+        
+        return matches
+
 
 # region methods
 
 # lang.get("response.birthday_set").format(month=dt_birthday.month,day=dt_birthday.day)
 
-    async def update_channel_settings(self, guild_id: int, channel_id: int, game_id: int):
+    async def add_game_to_channel(self, guild_id: int, channel_id: int, game_id: int):
+        """Add a game requirement to a channel."""
         async with self.config.guild(guild_id).channels() as channels:
-            channels[channel_id] = game_id
+            if channel_id not in channels:
+                channels[channel_id] = []
+            if game_id not in channels[channel_id]:
+                channels[channel_id].append(game_id)
 
-    async def remove_channel_settings(self, guild_id: int, channel_id: int):
+    async def remove_game_from_channel(self, guild_id: int, channel_id: int, game_id: int):
+        """Remove a specific game requirement from a channel."""
+        async with self.config.guild(guild_id).channels() as channels:
+            if channel_id in channels and game_id in channels[channel_id]:
+                channels[channel_id].remove(game_id)
+                if not channels[channel_id]:  # Remove channel if no games left
+                    channels.pop(channel_id, None)
+
+    async def remove_all_games_from_channel(self, guild_id: int, channel_id: int):
+        """Remove all game requirements from a channel."""
         async with self.config.guild(guild_id).channels() as channels:
             channels.pop(channel_id, None)
+
+    async def get_channel_games(self, guild_id: int, channel_id: int) -> List[int]:
+        """Get all game IDs for a channel."""
+        channels = await self.config.guild(guild_id).channels()
+        return channels.get(channel_id, [])
+
+    def game_info_str(self, game_info: Optional[Dict], game_id: int) -> str:
+        """Format game information as 'Name (ID)' or 'ID' if no info available."""
+        if game_info:
+            return f"{game_info['name']} ({game_info['id']})"
+        return f"ID {game_id}"
 
     @checks.admin_or_permissions(manage_channels=True)
     @commands.group(name="gamechannel", aliases=["gc"])
@@ -92,32 +193,94 @@ class GameChannel(commands.Cog):
         """Manage voice channel game requirements."""
         pass
 
-    @game_channel.command(name="set")
-    async def set_gamechannel(self, ctx: commands.Context, channel: discord.VoiceChannel, game_id: str = None):
-        """Set a required game for a voice channel."""
-        if not game_id: return await self.remove_gamechannel(self, ctx, channel)
-        await self.update_channel_settings(ctx.guild, channel.id, game_id)
+    @game_channel.command(name="add")
+    async def add_game(self, ctx: commands.Context, channel: discord.VoiceChannel, *, game_name: str):
+        """Add a game requirement to a voice channel."""
+        if not isinstance(channel, discord.VoiceChannel):
+            await ctx.send(error("Please specify a voice channel."))
+            return
+        
+        # Resolve game name to ID
+        game_id = await self.resolve_game_id(game_name)
+        if not game_id:
+            # Try to find similar games
+            similar_games = await self.search_games(game_name, limit=5)
+            if similar_games:
+                embed = discord.Embed(
+                    title="Game not found",
+                    description=f"Could not find '{game_name}'. Did you mean one of these?",
+                    color=discord.Color.orange()
+                )
+                for game in similar_games:
+                    embed.add_field(
+                        name=game["name"],
+                        value=f"ID: {game['id']}",
+                        inline=False
+                    )
+                await ctx.send(embed=embed)
+            else:
+                await ctx.send(error(f"Game '{game_name}' not found. Use `{ctx.prefix}gc search <name>` to search for games."))
+            return
+        
+        # Add game to channel
+        await self.add_game_to_channel(ctx.guild.id, channel.id, game_id)
+        
+        # Get game info for display
+        game_info = await self.get_game_info(game_id)
+        game_display = self.game_info_str(game_info, game_id)
         
         await ctx.send(
-            f"Set game requirement for {channel.mention}: "
-            f"Application ID {game_id}"
+            success(f"Added {game_display} as a required game for {channel.mention}")
         )
 
     @game_channel.command(name="remove")
-    async def remove_gamechannel(self, ctx: commands.Context, channel: discord.VoiceChannel):
-        """Remove game requirement from a voice channel."""
-        async with self.config.guild(ctx.guild).channels() as channels:
-            if channel.id in channels:
-                await self.remove_channel_settings(ctx.guild.id, channel.id)
-                await ctx.send(f"Removed game requirement from {channel.mention}")
-            else:
-                await ctx.send(
-                    f"No game requirement set for {channel.mention}"
-                )
+    async def remove_game(self, ctx: commands.Context, channel: discord.VoiceChannel, *, game_name: str):
+        """Remove a specific game requirement from a voice channel."""
+        if not isinstance(channel, discord.VoiceChannel):
+            await ctx.send(error("Please specify a voice channel."))
+            return
+        
+        # Resolve game name to ID
+        game_id = await self.resolve_game_id(game_name)
+        if not game_id:
+            await ctx.send(error(f"Game '{game_name}' not found."))
+            return
+        
+        # Check if game is assigned to channel
+        channel_games = await self.get_channel_games(ctx.guild.id, channel.id)
+        if game_id not in channel_games:
+            await ctx.send(warning(f"{channel.mention} doesn't have '{game_name}' as a requirement."))
+            return
+        
+        # Remove game from channel
+        await self.remove_game_from_channel(ctx.guild.id, channel.id, game_id)
+        
+        # Get game info for display
+        game_info = await self.get_game_info(game_id)
+        game_display = self.game_info_str(game_info, game_id)
+        
+        await ctx.send(
+            success(f"Removed {game_display} from {channel.mention}")
+        )
+
+    @game_channel.command(name="clear")
+    async def clear_games(self, ctx: commands.Context, channel: discord.VoiceChannel):
+        """Remove all game requirements from a voice channel."""
+        if not isinstance(channel, discord.VoiceChannel):
+            await ctx.send(error("Please specify a voice channel."))
+            return
+        
+        channel_games = await self.get_channel_games(ctx.guild.id, channel.id)
+        if not channel_games:
+            await ctx.send(warning(f"{channel.mention} has no game requirements."))
+            return
+        
+        await self.remove_all_games_from_channel(ctx.guild.id, channel.id)
+        await ctx.send(success(f"Removed all game requirements from {channel.mention}"))
 
     @game_channel.command(name="check")
     async def gamechannel_check(self, ctx: commands.Context):
-        """Check all users in game-restricted voice channels and remove those not playing the required game."""
+        """Check all users in game-restricted voice channels and remove those not playing any required game."""
         if not ctx.guild:
             await ctx.send("This command can only be used in a server.")
             return
@@ -135,7 +298,7 @@ class GameChannel(commands.Cog):
             if not channels:
                 continue
                 
-            for channel_id, required_game_id in channels.items():
+            for channel_id, required_game_ids in channels.items():
                 channel = guild.get_channel(int(channel_id))
                 if not channel or not isinstance(channel, discord.VoiceChannel):
                     continue
@@ -149,9 +312,17 @@ class GameChannel(commands.Cog):
                         if isinstance(activity, discord.Activity) and activity.application_id
                     ]
                     
-                    if required_game_id not in activities:
+                    # Check if member is playing any of the required games
+                    if not any(game_id in activities for game_id in required_game_ids):
                         try:
-                            await member.send(f"You were removed from {channel.mention} because you weren't playing the required game.")
+                            # Get game names for the message
+                            game_names = []
+                            for game_id in required_game_ids:
+                                game_info = await self.get_game_info(game_id)
+                                game_names.append(self.game_info_str(game_info, game_id))
+                            
+                            games_list = ", ".join(game_names)
+                            await member.send(f"You were removed from {channel.mention} because you weren't playing any of the required games: {games_list}")
                         except discord.Forbidden:
                             pass
                             
@@ -176,14 +347,84 @@ class GameChannel(commands.Cog):
             return
         
         embed = discord.Embed(title="Voice Channel Game Requirements")
-        for channel_id, game_id in channels.items():
+        for channel_id, game_ids in channels.items():
             channel = ctx.guild.get_channel(int(channel_id))
-            if channel:
+            if channel and game_ids:
+                # Get game names
+                game_names = []
+                for game_id in game_ids:
+                    game_info = await self.get_game_info(game_id)
+                    game_names.append(self.game_info_str(game_info, game_id))
+                
                 embed.add_field(
                     name=f"{channel.mention}",
-                    value=f"Required Game ID: {game_id}",
+                    value=f"Required Games: {', '.join(game_names)}",
                     inline=False
                 )
+        await ctx.send(embed=embed)
+
+    @game_channel.command(name="search")
+    async def search_games(self, ctx: commands.Context, *, query: str):
+        """Search for games by name."""
+        if len(query) < 2:
+            await ctx.send(error("Query must be at least 2 characters long."))
+            return
+        
+        games = await self.search_games(query, limit=10)
+        if not games:
+            await ctx.send(error(f"No games found matching '{query}'."))
+            return
+        
+        embed = discord.Embed(
+            title=f"Games matching '{query}'",
+            color=discord.Color.blue()
+        )
+        
+        for game in games:
+            themes = ", ".join(game.get("themes", [])) if game.get("themes") else "No themes"
+            embed.add_field(
+                name=game["name"],
+                value=f"ID: {game['id']}\nThemes: {themes}",
+                inline=True
+            )
+        
+        await ctx.send(embed=embed)
+
+    @game_channel.command(name="info")
+    async def game_info(self, ctx: commands.Context, *, game_name: str):
+        """Get detailed information about a game."""
+        game_id = await self.resolve_game_id(game_name)
+        if not game_id:
+            await ctx.send(error(f"Game '{game_name}' not found."))
+            return
+        
+        game_info = await self.get_game_info(game_id)
+        if not game_info:
+            await ctx.send(error(f"Could not retrieve information for game ID {game_id}."))
+            return
+        
+        embed = discord.Embed(
+            title=self.game_info_str(game_info, game_id),
+            color=discord.Color.green()
+        )
+        
+        if game_info.get("aliases"):
+            embed.add_field(name="Aliases", value=", ".join(game_info["aliases"]), inline=False)
+        
+        if game_info.get("themes"):
+            embed.add_field(name="Themes", value=", ".join(game_info["themes"]), inline=False)
+        
+        embed.add_field(name="Game ID", value=game_info["id"], inline=True)
+        embed.add_field(name="Overlay Support", value="Yes" if game_info.get("overlay") else "No", inline=True)
+        embed.add_field(name="Hook Support", value="Yes" if game_info.get("hook") else "No", inline=True)
+        
+        if game_info.get("executables"):
+            exe_names = [exe["name"] for exe in game_info["executables"][:5]]  # Limit to 5
+            exe_text = ", ".join(exe_names)
+            if len(game_info["executables"]) > 5:
+                exe_text += f" (+{len(game_info['executables']) - 5} more)"
+            embed.add_field(name="Executables", value=exe_text, inline=False)
+        
         await ctx.send(embed=embed)
             
 # endregion metods
@@ -204,27 +445,36 @@ class GameChannel(commands.Cog):
         guild_config = self.config.guild(member.guild)
         channels = await guild_config.channels()
         
-        if channel_id not in channels: return
+        if channel_id not in channels: 
+            return
 
-        required_game_id = int(channels[channel_id])
+        required_game_ids = channels[channel_id]
+        if not required_game_ids:
+            return
         
         activities = [ activity.application_id for activity in member.activities if isinstance(activity, discord.Activity) ]
 
-        log.info(f"[#{channel_id}] @{member.id}: {required_game_id} in {activities} == {required_game_id in activities}")
+        # Check if member is playing any of the required games
+        is_playing_required_game = any(game_id in activities for game_id in required_game_ids)
         
-        if required_game_id not in activities:
+        log.info(f"[#{channel_id}] @{member.id}: {required_game_ids} in {activities} == {is_playing_required_game}")
+        
+        if not is_playing_required_game:
             chan = after.channel.mention
-            # Move the member to a default channel (or disconnect them)
-            # default_channel = member.guild.afk_channel
-            # if default_channel:
-            #     await member.move_to(default_channel)
-            # else:
-            await member.edit(voice_channel=None)
-
+            
+            # Get game names for the message
+            game_names = []
+            for game_id in required_game_ids:
+                game_info = await self.get_game_info(game_id)
+                game_names.append(self.game_info_str(game_info, game_id))
+            
+            games_list = ", ".join(game_names)
+            
             try:
-                await member.send(f"You were removed from {chan} because you weren't playing the required game.")
+                await member.edit(voice_channel=None)
+                await member.send(f"You were removed from {chan} because you weren't playing any of the required games: {games_list}")
             except discord.Forbidden:
-                pass
+                log.warning(f"Could not remove {member} from {chan} due to permissions.")
 # endregion events
 
     @staticmethod
