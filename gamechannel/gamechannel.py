@@ -32,8 +32,9 @@ class GameChannel(commands.Cog):
     __author__ = "Bluscream"
     __version__ = "1.0.0"
 
-    default_global_settings: ClassVar[dict[str, int]] = {
-        "schema_version": 0
+    default_global_settings: ClassVar[dict[str, Union[int, dict]]] = {
+        "schema_version": 1,
+        "backup_data": {}
     }
 
     default_guild_settings: ClassVar[dict[str, dict[int, List[int]]]] = {
@@ -78,6 +79,65 @@ class GameChannel(commands.Cog):
     async def _migrate_config(self) -> None:
         """Perform some configuration migrations."""
         schema_version = await self.config.schema_version()
+        
+        if schema_version < 1:
+            await self._migrate_to_v1()
+            await self.config.schema_version.set(1)
+            log.info("Migrated GameChannel config to schema version 1")
+
+    async def _migrate_to_v1(self) -> None:
+        """Migrate from single game IDs to multiple game IDs per channel."""
+        log.info("Starting migration to schema version 1 (single game -> multiple games)")
+        
+        migrated_guilds = 0
+        migrated_channels = 0
+        backup_data = {}
+        
+        for guild in self.bot.guilds:
+            try:
+                guild_config = self.config.guild(guild)
+                channels = await guild_config.channels()
+                
+                if not channels:
+                    continue
+                
+                # Create backup of original data
+                backup_data[str(guild.id)] = dict(channels)
+                
+                # Check if this is old format (single int values) or new format (list values)
+                needs_migration = False
+                new_channels = {}
+                
+                for channel_id, value in channels.items():
+                    if isinstance(value, int):
+                        # Old format: single game ID
+                        needs_migration = True
+                        new_channels[channel_id] = [value]  # Convert to list
+                        migrated_channels += 1
+                        log.debug(f"Migrating {guild.name} channel {channel_id}: {value} -> [{value}]")
+                    elif isinstance(value, list):
+                        # Already new format
+                        new_channels[channel_id] = value
+                    else:
+                        # Unknown format, skip
+                        log.warning(f"Unknown channel format for {guild.name} channel {channel_id}: {type(value)}")
+                        continue
+                
+                if needs_migration:
+                    await guild_config.channels.set(new_channels)
+                    migrated_guilds += 1
+                    log.info(f"Migrated {guild.name}: {len([k for k, v in channels.items() if isinstance(v, int)])} channels")
+                
+            except Exception as e:
+                log.error(f"Error migrating guild {guild.name}: {e}")
+                continue
+        
+        # Store backup data for potential rollback
+        if backup_data:
+            await self.config.backup_data.set(backup_data)
+            log.info(f"Backup data stored for {len(backup_data)} guilds")
+        
+        log.info(f"Migration complete: {migrated_guilds} guilds, {migrated_channels} channels migrated")
 
     async def _fetch_detectable_games(self) -> Dict[str, Dict]:
         """Fetch detectable games from Discord API with caching."""
@@ -553,6 +613,129 @@ class GameChannel(commands.Cog):
         embed.set_footer(text=f"Use '{ctx.prefix}gc add <channel> <game_name>' to add a game to a channel")
         
         await ctx.send(embed=embed)
+
+    @game_channel.command(name="migrate")
+    @checks.is_owner()
+    async def migrate_config(self, ctx: commands.Context):
+        """Manually trigger configuration migration (Bot Owner only)."""
+        current_version = await self.config.schema_version()
+        latest_version = 1
+        
+        if current_version >= latest_version:
+            await ctx.send(info(f"Configuration is already at the latest version ({current_version})."))
+            return
+        
+        await ctx.send("Starting configuration migration...")
+        
+        try:
+            if current_version < 1:
+                await self._migrate_to_v1()
+                await self.config.schema_version.set(1)
+                await ctx.send(success("Successfully migrated to schema version 1!"))
+            else:
+                await ctx.send(info("No migration needed."))
+                
+        except Exception as e:
+            await ctx.send(error(f"Migration failed: {e}"))
+            log.error(f"Manual migration failed: {e}")
+
+    @game_channel.command(name="version")
+    async def config_version(self, ctx: commands.Context):
+        """Show the current configuration schema version."""
+        current_version = await self.config.schema_version()
+        latest_version = 1
+        
+        embed = discord.Embed(
+            title="Configuration Schema Version",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Current Version", value=str(current_version), inline=True)
+        embed.add_field(name="Latest Version", value=str(latest_version), inline=True)
+        
+        if current_version < latest_version:
+            embed.color = discord.Color.orange()
+            embed.add_field(
+                name="Status", 
+                value="⚠️ Migration needed", 
+                inline=False
+            )
+            embed.add_field(
+                name="Action", 
+                value=f"Use `{ctx.prefix}gc migrate` to update", 
+                inline=False
+            )
+        else:
+            embed.color = discord.Color.green()
+            embed.add_field(name="Status", value="✅ Up to date", inline=False)
+        
+        await ctx.send(embed=embed)
+
+    @game_channel.command(name="rollback")
+    @checks.is_owner()
+    async def rollback_migration(self, ctx: commands.Context):
+        """Rollback to previous configuration (Bot Owner only)."""
+        backup_data = await self.config.backup_data()
+        
+        if not backup_data:
+            await ctx.send(error("No backup data found. Cannot rollback."))
+            return
+        
+        await ctx.send("⚠️ **WARNING**: This will restore the previous configuration and may cause data loss. Continue? (yes/no)")
+        
+        def check(message):
+            return (message.author == ctx.author and 
+                   message.channel == ctx.channel and 
+                   message.content.lower() in ['yes', 'no'])
+        
+        try:
+            response = await self.bot.wait_for('message', check=check, timeout=30.0)
+            if response.content.lower() != 'yes':
+                await ctx.send("Rollback cancelled.")
+                return
+        except asyncio.TimeoutError:
+            await ctx.send("Rollback cancelled due to timeout.")
+            return
+        
+        try:
+            rollback_count = 0
+            for guild_id_str, channels in backup_data.items():
+                guild_id = int(guild_id_str)
+                guild = self.bot.get_guild(guild_id)
+                if guild:
+                    guild_config = self.config.guild(guild)
+                    await guild_config.channels.set(channels)
+                    rollback_count += 1
+            
+            # Reset schema version
+            await self.config.schema_version.set(0)
+            
+            await ctx.send(success(f"Successfully rolled back configuration for {rollback_count} guilds."))
+            log.info(f"Configuration rolled back for {rollback_count} guilds")
+            
+        except Exception as e:
+            await ctx.send(error(f"Rollback failed: {e}"))
+            log.error(f"Rollback failed: {e}")
+
+    @game_channel.command(name="backup")
+    @checks.is_owner()
+    async def backup_config(self, ctx: commands.Context):
+        """Create a backup of current configuration (Bot Owner only)."""
+        backup_data = {}
+        
+        for guild in self.bot.guilds:
+            try:
+                guild_config = self.config.guild(guild)
+                channels = await guild_config.channels()
+                if channels:
+                    backup_data[str(guild.id)] = dict(channels)
+            except Exception as e:
+                log.error(f"Error backing up guild {guild.name}: {e}")
+                continue
+        
+        await self.config.backup_data.set(backup_data)
+        
+        await ctx.send(success(f"Backup created for {len(backup_data)} guilds with game channel configurations."))
+        log.info(f"Manual backup created for {len(backup_data)} guilds")
             
 # endregion metods
 
