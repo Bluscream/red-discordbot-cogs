@@ -32,9 +32,10 @@ class GameChannel(commands.Cog):
     __author__ = "Bluscream"
     __version__ = "1.0.0"
 
-    default_global_settings: ClassVar[dict[str, Union[int, dict]]] = {
+    default_global_settings: ClassVar[dict[str, Union[int, dict, List[int]]]] = {
         "schema_version": 1,
-        "backup_data": {}
+        "backup_data": {},
+        "whitelist": []
     }
 
     default_guild_settings: ClassVar[dict[str, dict[int, List[int]]]] = {
@@ -256,6 +257,31 @@ class GameChannel(commands.Cog):
             return f"{game_info['name']} ({game_info['id']})"
         return f"ID {game_id}"
 
+    async def is_user_whitelisted(self, user_id: int) -> bool:
+        """Check if a user is whitelisted."""
+        whitelist = await self.config.whitelist()
+        return user_id in whitelist
+
+    async def add_user_to_whitelist(self, user_id: int) -> bool:
+        """Add a user to the whitelist. Returns True if added, False if already exists."""
+        async with self.config.whitelist() as whitelist:
+            if user_id not in whitelist:
+                whitelist.append(user_id)
+                return True
+            return False
+
+    async def remove_user_from_whitelist(self, user_id: int) -> bool:
+        """Remove a user from the whitelist. Returns True if removed, False if not found."""
+        async with self.config.whitelist() as whitelist:
+            if user_id in whitelist:
+                whitelist.remove(user_id)
+                return True
+            return False
+
+    async def get_whitelist(self) -> List[int]:
+        """Get the current whitelist."""
+        return await self.config.whitelist()
+
     @checks.admin_or_permissions(manage_channels=True)
     @commands.group(name="gamechannel", aliases=["gc"])
     async def game_channel(self, ctx: commands.Context):
@@ -375,6 +401,10 @@ class GameChannel(commands.Cog):
                 checked_channels += 1
                 
                 for member in channel.members:
+                    # Skip whitelisted users
+                    if await self.is_user_whitelisted(member.id):
+                        continue
+                    
                     activities = [
                         activity.application_id 
                         for activity in member.activities 
@@ -854,6 +884,108 @@ class GameChannel(commands.Cog):
         except Exception as e:
             await ctx.send(error(f"Purge failed: {e}"))
             log.error(f"Configuration purge failed: {e}")
+
+    @game_channel.command(name="whitelist")
+    @checks.is_owner()
+    async def whitelist_management(self, ctx: commands.Context):
+        """Manage the global whitelist (Bot Owner only)."""
+        pass
+
+    @whitelist_management.command(name="add")
+    async def whitelist_add(self, ctx: commands.Context, user: discord.User):
+        """Add a user to the global whitelist."""
+        user_id = user.id
+        
+        if await self.add_user_to_whitelist(user_id):
+            await ctx.send(success(f"Added {user.mention} to the whitelist. They will not be affected by game channel restrictions."))
+            log.info(f"Added {user.name} ({user_id}) to whitelist")
+        else:
+            await ctx.send(warning(f"{user.mention} is already on the whitelist."))
+
+    @whitelist_management.command(name="remove")
+    async def whitelist_remove(self, ctx: commands.Context, user: discord.User):
+        """Remove a user from the global whitelist."""
+        user_id = user.id
+        
+        if await self.remove_user_from_whitelist(user_id):
+            await ctx.send(success(f"Removed {user.mention} from the whitelist. They will now be affected by game channel restrictions."))
+            log.info(f"Removed {user.name} ({user_id}) from whitelist")
+        else:
+            await ctx.send(warning(f"{user.mention} is not on the whitelist."))
+
+    @whitelist_management.command(name="list")
+    async def whitelist_list(self, ctx: commands.Context):
+        """List all whitelisted users."""
+        whitelist = await self.get_whitelist()
+        
+        if not whitelist:
+            await ctx.send(info("No users are currently whitelisted."))
+            return
+        
+        embed = discord.Embed(
+            title="Whitelisted Users",
+            description=f"{len(whitelist)} user(s) are whitelisted",
+            color=discord.Color.green()
+        )
+        
+        # Show users in chunks to avoid embed limits
+        user_mentions = []
+        for user_id in whitelist:
+            user = self.bot.get_user(user_id)
+            if user:
+                user_mentions.append(f"{user.mention} ({user.name})")
+            else:
+                user_mentions.append(f"Unknown User ({user_id})")
+        
+        # Split into chunks of 10 users per field
+        for i in range(0, len(user_mentions), 10):
+            chunk = user_mentions[i:i+10]
+            field_name = f"Users {i+1}-{min(i+10, len(user_mentions))}"
+            embed.add_field(
+                name=field_name,
+                value="\n".join(chunk),
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+
+    @whitelist_management.command(name="clear")
+    async def whitelist_clear(self, ctx: commands.Context):
+        """Clear the entire whitelist."""
+        whitelist = await self.get_whitelist()
+        
+        if not whitelist:
+            await ctx.send(info("The whitelist is already empty."))
+            return
+        
+        await ctx.send(f"⚠️ **WARNING**: This will remove {len(whitelist)} user(s) from the whitelist. Type `CONFIRM CLEAR` to proceed or anything else to cancel.")
+        
+        def check(message):
+            return (message.author == ctx.author and 
+                   message.channel == ctx.channel)
+        
+        try:
+            response = await self.bot.wait_for('message', check=check, timeout=30.0)
+            if response.content != 'CONFIRM CLEAR':
+                await ctx.send("Whitelist clear cancelled.")
+                return
+        except asyncio.TimeoutError:
+            await ctx.send("Whitelist clear cancelled due to timeout.")
+            return
+        
+        await self.config.whitelist.set([])
+        await ctx.send(success(f"Cleared the whitelist. {len(whitelist)} user(s) removed."))
+        log.info(f"Cleared whitelist: {len(whitelist)} users removed")
+
+    @whitelist_management.command(name="check")
+    async def whitelist_check(self, ctx: commands.Context, user: discord.User):
+        """Check if a user is whitelisted."""
+        is_whitelisted = await self.is_user_whitelisted(user.id)
+        
+        if is_whitelisted:
+            await ctx.send(success(f"{user.mention} is whitelisted and will not be affected by game channel restrictions."))
+        else:
+            await ctx.send(info(f"{user.mention} is not whitelisted and will be affected by game channel restrictions."))
             
 # endregion metods
 
@@ -878,6 +1010,11 @@ class GameChannel(commands.Cog):
 
         required_game_ids = channels[channel_id]
         if not required_game_ids:
+            return
+        
+        # Check if user is whitelisted
+        if await self.is_user_whitelisted(member.id):
+            log.info(f"[#{channel_id}] @{member.id}: Whitelisted user, skipping game check")
             return
         
         activities = [ activity.application_id for activity in member.activities if isinstance(activity, discord.Activity) ]
