@@ -885,7 +885,7 @@ class GameChannel(commands.Cog):
             await ctx.send(error(f"Purge failed: {e}"))
             log.error(f"Configuration purge failed: {e}")
 
-    @game_channel.command(name="whitelist")
+    @game_channel.group(name="whitelist")
     @checks.is_owner()
     async def whitelist_management(self, ctx: commands.Context):
         """Manage the global whitelist (Bot Owner only)."""
