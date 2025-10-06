@@ -520,7 +520,10 @@ class GameChannel(commands.Cog):
         if game_info.get("executables"):
             exe_names = [exe["name"] for exe in game_info["executables"][:5]]  # Limit to 5
             # Format each executable name with backticks and escape existing backticks
-            formatted_exes = [f"`{exe_name.replace('`', '\\`')}`" for exe_name in exe_names]
+            formatted_exes = []
+            for exe_name in exe_names:
+                escaped_name = exe_name.replace('`', '\\`')
+                formatted_exes.append(f"`{escaped_name}`")
             exe_text = ", ".join(formatted_exes)
             if len(game_info["executables"]) > 5:
                 exe_text += f" (+{len(game_info['executables']) - 5} more)"
