@@ -195,8 +195,8 @@ class GameChannel(commands.Cog):
         games_cache = await self._fetch_detectable_games()
         return games_cache["by_id"].get(str(game_id))
 
-    async def search_games(self, query: str, limit: int = 10) -> List[Dict]:
-        """Search for games by name or alias."""
+    async def _search_games_internal(self, query: str, limit: int = 10) -> List[Dict]:
+        """Search for games by name or alias (internal method)."""
         games_cache = await self._fetch_detectable_games()
         query_lower = query.lower()
         matches = []
@@ -273,7 +273,7 @@ class GameChannel(commands.Cog):
         game_id = await self.resolve_game_id(game_name)
         if not game_id:
             # Try to find similar games
-            similar_games = await self.search_games(game_name, limit=5)
+            similar_games = await self._search_games_internal(game_name, limit=5)
             if similar_games:
                 embed = discord.Embed(
                     title="Game not found",
@@ -439,7 +439,7 @@ class GameChannel(commands.Cog):
             await ctx.send(error("Query must be at least 2 characters long."))
             return
         
-        games = await self.search_games(query, limit=10)
+        games = await self._search_games_internal(query, limit=10)
         if not games:
             await ctx.send(error(f"No games found matching '{query}'."))
             return
