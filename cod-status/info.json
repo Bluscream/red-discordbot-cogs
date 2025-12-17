@@ -1,0 +1,11 @@
+{
+  "name": "COD Status",
+  "author": ["Bluscream (bluscream_)"],
+  "short": "Monitors Activision online services status and posts updates to channels",
+  "description": "Monitors Activision online services status and posts updates to channels",
+  "install_msg": "Thanks for installing COD Status! This cog monitors Activision's online services status and can post updates to selected channels.",
+  "tags": ["utility", "gaming"],
+  "min_bot_version": "3.5.0",
+  "min_python_version": [3, 11, 0],
+  "end_user_data_statement": "This cog stores channel IDs for status updates and optional bot status configuration."
+}
