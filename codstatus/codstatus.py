@@ -2,12 +2,11 @@
 
 from contextlib import suppress
 from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime
 from logging import getLogger
 from pathlib import Path
 import asyncio
 import aiohttp
-import json
 
 import discord
 from discord.ext import tasks
@@ -16,189 +15,10 @@ from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import error, info, success, warning, box
 
 from .pcx_lib import *
+from .activision_api import ActivisionStatus
+from .regex_utils import RegexParser
 
 log = getLogger("red.blu.activisionstatus")
-
-
-class ActivisionStatus:
-    """Class to interact with Activision's status API."""
-
-    API_URL = "https://prod-psapi.infra-ext.activision.com/open/api/apexrest/oshp/landingpage"
-
-    def __init__(self, session: Optional[aiohttp.ClientSession] = None, cache_file: Optional[Path] = None, cache_age: int = 300):
-        """Initialize the ActivisionStatus class.
-        
-        Args:
-            session: Optional aiohttp session to use
-            cache_file: Optional path to cache file
-            cache_age: Cache age in seconds before fetching new data (default: 300 = 5 minutes)
-        """
-        self.session = session
-        self._last_data: Optional[Dict[str, Any]] = None
-        self._last_fetch_time: Optional[datetime] = None
-        self.cache_file = cache_file
-        self.cache_age = cache_age
-
-    async def fetch_status(self, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
-        """Fetch the current status from Activision's API.
-        
-        Args:
-            force_refresh: If True, bypass cache and fetch from API
-        
-        Returns:
-            Status data dictionary or None if fetch failed
-        """
-        # Check cache first if not forcing refresh
-        if not force_refresh:
-            cached_data = self._load_cache()
-            if cached_data:
-                cache_time = cached_data.get("_cache_timestamp")
-                if cache_time:
-                    try:
-                        cache_dt = datetime.fromisoformat(cache_time)
-                        age = (datetime.utcnow() - cache_dt).total_seconds()
-                        if age < self.cache_age:
-                            log.debug(f"Using cached data (age: {age:.1f}s)")
-                            self._last_data = cached_data.get("data")
-                            self._last_fetch_time = cache_dt
-                            return self._last_data
-                        else:
-                            log.debug(f"Cache expired (age: {age:.1f}s, max: {self.cache_age}s)")
-                    except Exception as e:
-                        log.warning(f"Error parsing cache timestamp: {e}")
-        
-        # Fetch from API
-        if not self.session:
-            async with aiohttp.ClientSession() as session:
-                data = await self._fetch_with_session(session)
-        else:
-            data = await self._fetch_with_session(self.session)
-        
-        # Save to cache if fetch was successful
-        if data and self.cache_file:
-            self._save_cache(data)
-        
-        return data
-
-    async def _fetch_with_session(self, session: aiohttp.ClientSession) -> Optional[Dict[str, Any]]:
-        """Internal method to fetch status with a session."""
-        try:
-            async with session.get(self.API_URL, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    self._last_data = data
-                    self._last_fetch_time = datetime.utcnow()
-                    return data
-                else:
-                    log.warning(f"Failed to fetch Activision status: HTTP {response.status}")
-                    return None
-        except asyncio.TimeoutError:
-            log.warning("Timeout while fetching Activision status")
-            return None
-        except aiohttp.ClientError as e:
-            log.error(f"Error fetching Activision status: {e}")
-            return None
-        except Exception as e:
-            log.error(f"Unexpected error fetching Activision status: {e}")
-            return None
-
-    def _save_cache(self, data: Dict[str, Any]) -> None:
-        """Save data to cache file."""
-        if not self.cache_file:
-            return
-        
-        try:
-            cache_data = {
-                "_cache_timestamp": datetime.utcnow().isoformat(),
-                "data": data
-            }
-            self.cache_file.parent.mkdir(parents=True, exist_ok=True)
-            with self.cache_file.open("w", encoding="utf-8") as f:
-                json.dump(cache_data, f, indent=2)
-            log.debug(f"Saved cache to {self.cache_file}")
-        except Exception as e:
-            log.warning(f"Failed to save cache: {e}")
-
-    def _load_cache(self) -> Optional[Dict[str, Any]]:
-        """Load data from cache file."""
-        if not self.cache_file or not self.cache_file.exists():
-            return None
-        
-        try:
-            with self.cache_file.open("r", encoding="utf-8") as f:
-                cache_data = json.load(f)
-                log.debug(f"Loaded cache from {self.cache_file}")
-                return cache_data
-        except json.JSONDecodeError as e:
-            log.warning(f"Invalid cache file format: {e}")
-            return None
-        except Exception as e:
-            log.warning(f"Failed to load cache: {e}")
-            return None
-
-    def get_server_statuses(self, data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """Get the list of server statuses (games with issues)."""
-        if data is None:
-            data = self._last_data
-        if not data:
-            return []
-        return data.get("serverStatuses", [])
-
-    def get_platforms(self, data: Optional[Dict[str, Any]] = None) -> List[str]:
-        """Get the list of available platforms."""
-        if data is None:
-            data = self._last_data
-        if not data:
-            return []
-        return data.get("platformsRO", [])
-
-    def get_red_alerts(self, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Get active red alerts."""
-        if data is None:
-            data = self._last_data
-        if not data:
-            return {}
-        return data.get("redAlerts", {})
-
-    def get_recently_resolved(self, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Get recently resolved incidents."""
-        if data is None:
-            data = self._last_data
-        if not data:
-            return {}
-        return data.get("recentlyResolved", {})
-
-    def get_updated_time(self, data: Optional[Dict[str, Any]] = None) -> Optional[str]:
-        """Get the timestamp of when the data was last updated."""
-        if data is None:
-            data = self._last_data
-        if not data:
-            return None
-        return data.get("updatedTime")
-
-    def is_game_online(self, game_title: str, platform: str, data: Optional[Dict[str, Any]] = None) -> bool:
-        """Check if a specific game/platform combination is online."""
-        server_statuses = self.get_server_statuses(data)
-        # If game/platform is NOT in serverStatuses, it's online
-        has_issue = any(
-            status.get("gameTitle") == game_title and status.get("platform") == platform
-            for status in server_statuses
-        )
-        return not has_issue
-
-    def get_games_with_issues(self, data: Optional[Dict[str, Any]] = None) -> Set[Tuple[str, str]]:
-        """Get a set of (game_title, platform) tuples for games with issues."""
-        server_statuses = self.get_server_statuses(data)
-        return {
-            (status.get("gameTitle", ""), status.get("platform", ""))
-            for status in server_statuses
-            if status.get("gameTitle") and status.get("platform")
-        }
-
-    def get_all_games(self, data: Optional[Dict[str, Any]] = None) -> Set[str]:
-        """Get all unique game titles from server statuses."""
-        server_statuses = self.get_server_statuses(data)
-        return {status.get("gameTitle", "") for status in server_statuses if status.get("gameTitle")}
 
 
 class ActivisionStatusCog(commands.Cog):
@@ -215,7 +35,7 @@ class ActivisionStatusCog(commands.Cog):
     }
 
     default_guild_settings: ClassVar[Dict[str, Any]] = {
-        "channels": [],  # List of channel IDs to post updates to
+        "channels": {},  # Dict mapping channel_id to {"filters": [regex_patterns]}
     }
 
     def __init__(self, bot: Red) -> None:
@@ -297,6 +117,41 @@ class ActivisionStatusCog(commands.Cog):
         if schema_version < 1:
             await self.config.schema_version.set(1)
             log.info("Migrated ActivisionStatus config to schema version 1")
+        
+        if schema_version < 2:
+            # Initialize channel_filters for all existing guilds
+            for guild in self.bot.guilds:
+                async with self.config.guild(guild).channel_filters() as filters:
+                    # Ensure it's initialized as empty dict if not present
+                    if not isinstance(filters, dict):
+                        filters = {}
+            await self.config.schema_version.set(2)
+            log.info("Migrated ActivisionStatus config to schema version 2 (added channel_filters)")
+        
+        if schema_version < 3:
+            # Migrate from separate channels list and channel_filters dict to unified channels dict
+            for guild in self.bot.guilds:
+                old_channels = await self.config.guild(guild).channels()
+                
+                # Check if old_channels is a list (old format)
+                if isinstance(old_channels, list):
+                    # Try to get old filters, but handle case where it doesn't exist
+                    try:
+                        old_filters = await self.config.guild(guild).channel_filters()
+                    except Exception:
+                        old_filters = {}
+                    
+                    new_channels = {}
+                    for channel_id in old_channels:
+                        channel_key = str(channel_id)
+                        filters = old_filters.get(channel_key, []) if isinstance(old_filters, dict) else []
+                        new_channels[channel_key] = {"filters": filters}
+                    
+                    await self.config.guild(guild).channels.set(new_channels)
+                    log.info(f"Migrated guild {guild.id} to schema version 3 (unified channels dict)")
+            
+            await self.config.schema_version.set(3)
+            log.info("Migrated ActivisionStatus config to schema version 3 (unified channels dict)")
 
     def cog_unload(self) -> None:
         """Clean up when cog is unloaded."""
@@ -345,6 +200,44 @@ class ActivisionStatusCog(commands.Cog):
     # Internal methods
     #
 
+    def _filter_issues_by_games(
+        self, issues: Set[Tuple[str, str]], filter_patterns: List[str]
+    ) -> Set[Tuple[str, str]]:
+        """Filter issues to only include games whose title matches the provided regex patterns.
+        
+        Args:
+            issues: Set of (game_title, platform) tuples
+            filter_patterns: List of regex patterns to match against game titles (may include /flags)
+        
+        Returns:
+            Filtered set of issues
+        """
+        if not filter_patterns:
+            return issues  # Empty filter = all games
+        
+        # Compile regex patterns with parsed flags
+        compiled_patterns = []
+        for pattern in filter_patterns:
+            is_valid, error_msg = RegexParser.validate_pattern(pattern)
+            if is_valid:
+                compiled_patterns.append(RegexParser.compile_pattern(pattern))
+            else:
+                log.warning(f"Invalid regex pattern '{pattern}': {error_msg}")
+        
+        if not compiled_patterns:
+            # All patterns were invalid, return empty set
+            return set()
+        
+        # Match game titles against patterns
+        filtered = set()
+        for game_title, platform in issues:
+            for pattern in compiled_patterns:
+                if pattern.search(game_title):
+                    filtered.add((game_title, platform))
+                    break  # Match found, no need to check other patterns
+        
+        return filtered
+
     async def _post_status_updates(
         self,
         new_issues: Set[Tuple[str, str]],
@@ -360,11 +253,28 @@ class ActivisionStatusCog(commands.Cog):
             if not channels:
                 continue
 
-            embed = await self._create_status_embed(new_issues, resolved_issues, data)
-
-            for channel_id in channels:
+            # channels is now a dict: {channel_id: {"filters": [...]}}
+            for channel_key, channel_config in channels.items():
+                try:
+                    channel_id = int(channel_key)
+                except (ValueError, TypeError):
+                    log.warning(f"Invalid channel ID in config: {channel_key}")
+                    continue
+                
                 channel = guild.get_channel(channel_id)
-                if channel and channel.permissions_for(guild.me).send_messages:
+                if not channel or not channel.permissions_for(guild.me).send_messages:
+                    continue
+
+                # Get filter list for this channel (empty list = all games)
+                filter_list = channel_config.get("filters", [])
+                
+                # Filter issues for this channel
+                filtered_new = self._filter_issues_by_games(new_issues, filter_list)
+                filtered_resolved = self._filter_issues_by_games(resolved_issues, filter_list)
+
+                # Only post if there are filtered issues
+                if filtered_new or filtered_resolved:
+                    embed = await self._create_status_embed(filtered_new, filtered_resolved, data)
                     try:
                         await channel.send(embed=embed)
                     except discord.HTTPException as e:
@@ -542,8 +452,9 @@ class ActivisionStatusCog(commands.Cog):
             return
 
         async with self.config.guild(ctx.guild).channels() as channels:
-            if target_channel.id not in channels:
-                channels.append(target_channel.id)
+            channel_key = str(target_channel.id)
+            if channel_key not in channels:
+                channels[channel_key] = {"filters": []}
                 await reply(ctx, success(f"Added {target_channel.mention} to receive status updates."))
             else:
                 await reply(ctx, info(f"{target_channel.mention} is already receiving status updates."))
@@ -565,38 +476,301 @@ class ActivisionStatusCog(commands.Cog):
             return
 
         async with self.config.guild(ctx.guild).channels() as channels:
-            if target_channel.id in channels:
-                channels.remove(target_channel.id)
+            channel_key = str(target_channel.id)
+            if channel_key in channels:
+                del channels[channel_key]
                 await reply(ctx, success(f"Removed {target_channel.mention} from status updates."))
             else:
                 await reply(ctx, info(f"{target_channel.mention} is not receiving status updates."))
 
-    @activision_group.command(name="listchannels")
+    @activision_group.group(name="channel")
+    async def channel_group(self, ctx: commands.Context) -> None:
+        """Channel management commands."""
+        pass
+
+    @channel_group.command(name="list")
     async def list_channels(self, ctx: commands.Context) -> None:
-        """List all channels configured to receive status updates."""
+        """List all channels configured to receive status updates.
+        
+        In a server: Shows channels for the current server.
+        In DMs: Shows channels for all servers (bot owner only).
+        """
+        if ctx.guild:
+            # In a server - show only current server
+            channels = await self.config.guild(ctx.guild).channels()
+            if not channels:
+                await reply(ctx, info("No channels are configured to receive status updates in this server."))
+                return
+
+            channel_mentions = []
+            for channel_key in channels.keys():
+                try:
+                    channel_id = int(channel_key)
+                except (ValueError, TypeError):
+                    continue
+                channel = ctx.guild.get_channel(channel_id)
+                if channel:
+                    channel_mentions.append(f"• {channel.mention} ({channel.name})")
+                else:
+                    channel_mentions.append(f"• Unknown channel (ID: {channel_key})")
+
+            embed = discord.Embed(
+                title=f"Status Update Channels - {ctx.guild.name}",
+                description="\n".join(channel_mentions) if channel_mentions else "No channels configured.",
+                color=discord.Color.blue()
+            )
+            await reply(ctx, embed=embed)
+        else:
+            # In DMs - show all servers (owner only)
+            if not await self.bot.is_owner(ctx.author):
+                await reply(ctx, error("This command can only be used by the bot owner in DMs."))
+                return
+
+            embeds = []
+            for guild in self.bot.guilds:
+                channels = await self.config.guild(guild).channels()
+                if not channels:
+                    continue
+
+                channel_mentions = []
+                for channel_key in channels.keys():
+                    try:
+                        channel_id = int(channel_key)
+                    except (ValueError, TypeError):
+                        continue
+                    channel = guild.get_channel(channel_id)
+                    if channel:
+                        channel_mentions.append(f"• {channel.mention} ({channel.name})")
+                    else:
+                        channel_mentions.append(f"• Unknown channel (ID: {channel_key})")
+
+                if channel_mentions:
+                    embed = discord.Embed(
+                        title=f"Status Update Channels - {guild.name}",
+                        description="\n".join(channel_mentions),
+                        color=discord.Color.blue()
+                    )
+                    embeds.append(embed)
+
+            if not embeds:
+                await reply(ctx, info("No channels are configured to receive status updates in any server."))
+                return
+
+            # Send all embeds (split if too many)
+            for embed in embeds:
+                await reply(ctx, embed=embed)
+
+    @channel_group.group(name="filter")
+    async def filter_group(self, ctx: commands.Context) -> None:
+        """Manage game filters for channels."""
+        pass
+
+    @filter_group.command(name="add")
+    @checks.admin_or_permissions(manage_guild=True)
+    async def filter_add(self, ctx: commands.Context, pattern: str, channel: Optional[discord.TextChannel] = None) -> None:
+        """Add a regex pattern to the channel's filter list.
+        
+        Only games matching patterns in the filter list will trigger status updates for this channel.
+        If no channel is specified, uses the current channel.
+        
+        Patterns are case-sensitive by default. Use /i flag for case-insensitive matching.
+        Example: `.*call of duty.*/i` for case-insensitive matching.
+        
+        Args:
+            pattern: Regex pattern to match game titles (case-sensitive by default, use /i flag for case-insensitive)
+            channel: Optional channel to configure (defaults to current channel)
+        """
         if not ctx.guild:
             await reply(ctx, error("This command can only be used in a server."))
             return
 
-        channels = await self.config.guild(ctx.guild).channels()
-        if not channels:
-            await reply(ctx, info("No channels are configured to receive status updates."))
+        target_channel = channel or ctx.channel
+        if not isinstance(target_channel, discord.TextChannel):
+            await reply(ctx, error("Please specify a valid text channel."))
             return
 
-        channel_mentions = []
-        for channel_id in channels:
-            channel = ctx.guild.get_channel(channel_id)
-            if channel:
-                channel_mentions.append(f"• {channel.mention} ({channel.name})")
-            else:
-                channel_mentions.append(f"• Unknown channel (ID: {channel_id})")
+        # Validate regex pattern (parse flags if present)
+        is_valid, error_msg = RegexParser.validate_pattern(pattern)
+        if not is_valid:
+            await reply(ctx, error(f"Invalid regex pattern: {error_msg}"))
+            return
 
-        embed = discord.Embed(
-            title="Status Update Channels",
-            description="\n".join(channel_mentions),
-            color=discord.Color.blue()
-        )
-        await reply(ctx, embed=embed)
+        async with self.config.guild(ctx.guild).channels() as channels:
+            channel_key = str(target_channel.id)
+            if channel_key not in channels:
+                await reply(ctx, error(f"{target_channel.mention} is not configured to receive status updates. Add it first with `{ctx.prefix}status activision addchannel`."))
+                return
+            
+            # Ensure filters key exists
+            if "filters" not in channels[channel_key]:
+                channels[channel_key]["filters"] = []
+            
+            if pattern not in channels[channel_key]["filters"]:
+                channels[channel_key]["filters"].append(pattern)
+                await reply(ctx, success(f"Added pattern `{pattern}` to {target_channel.mention}'s filter list."))
+            else:
+                await reply(ctx, info(f"Pattern `{pattern}` is already in {target_channel.mention}'s filter list."))
+
+    @filter_group.command(name="remove")
+    @checks.admin_or_permissions(manage_guild=True)
+    async def filter_remove(self, ctx: commands.Context, pattern: str, channel: Optional[discord.TextChannel] = None) -> None:
+        """Remove a regex pattern from the channel's filter list.
+        
+        If no channel is specified, uses the current channel.
+        
+        Args:
+            pattern: Regex pattern to remove from the filter
+            channel: Optional channel to configure (defaults to current channel)
+        """
+        if not ctx.guild:
+            await reply(ctx, error("This command can only be used in a server."))
+            return
+
+        target_channel = channel or ctx.channel
+        if not isinstance(target_channel, discord.TextChannel):
+            await reply(ctx, error("Please specify a valid text channel."))
+            return
+
+        async with self.config.guild(ctx.guild).channels() as channels:
+            channel_key = str(target_channel.id)
+            if channel_key in channels and "filters" in channels[channel_key] and pattern in channels[channel_key]["filters"]:
+                channels[channel_key]["filters"].remove(pattern)
+                # Keep filters key even if empty (for consistency)
+                await reply(ctx, success(f"Removed pattern `{pattern}` from {target_channel.mention}'s filter list."))
+            else:
+                await reply(ctx, info(f"Pattern `{pattern}` is not in {target_channel.mention}'s filter list."))
+
+    @filter_group.command(name="list")
+    async def filter_list(self, ctx: commands.Context, channel: Optional[discord.TextChannel] = None) -> None:
+        """List all regex patterns in the channel's filter list.
+        
+        If no channel is specified, uses the current channel.
+        Empty filter list means all games are shown.
+        
+        Args:
+            channel: Optional channel to check (defaults to current channel)
+        """
+        if not ctx.guild:
+            await reply(ctx, error("This command can only be used in a server."))
+            return
+
+        target_channel = channel or ctx.channel
+        if not isinstance(target_channel, discord.TextChannel):
+            await reply(ctx, error("Please specify a valid text channel."))
+            return
+
+        channels = await self.config.guild(ctx.guild).channels()
+        channel_key = str(target_channel.id)
+        channel_config = channels.get(channel_key, {})
+        filter_list = channel_config.get("filters", [])
+
+        if not filter_list:
+            await reply(ctx, info(f"{target_channel.mention} has no filter configured. All games will trigger status updates."))
+        else:
+            patterns_text = "\n".join(f"• `{pattern}`" for pattern in sorted(filter_list))
+            embed = discord.Embed(
+                title=f"Game Filter - {target_channel.name}",
+                description=patterns_text,
+                color=discord.Color.blue()
+            )
+            embed.set_footer(text="Only games matching these patterns will trigger status updates for this channel.")
+            await reply(ctx, embed=embed)
+
+    @filter_group.command(name="clear")
+    @checks.admin_or_permissions(manage_guild=True)
+    async def filter_clear(self, ctx: commands.Context, channel: Optional[discord.TextChannel] = None) -> None:
+        """Clear the channel's filter list (show all games).
+        
+        If no channel is specified, uses the current channel.
+        
+        Args:
+            channel: Optional channel to clear (defaults to current channel)
+        """
+        if not ctx.guild:
+            await reply(ctx, error("This command can only be used in a server."))
+            return
+
+        target_channel = channel or ctx.channel
+        if not isinstance(target_channel, discord.TextChannel):
+            await reply(ctx, error("Please specify a valid text channel."))
+            return
+
+        async with self.config.guild(ctx.guild).channels() as channels:
+            channel_key = str(target_channel.id)
+            if channel_key in channels:
+                channels[channel_key]["filters"] = []
+                await reply(ctx, success(f"Cleared {target_channel.mention}'s filter list. All games will now trigger status updates."))
+            else:
+                await reply(ctx, info(f"{target_channel.mention} is not configured to receive status updates."))
+
+    @activision_group.command(name="games")
+    async def list_games(self, ctx: commands.Context) -> None:
+        """List all available game titles from the current API data.
+        
+        Use these exact game titles when adding filters.
+        """
+        async with ctx.typing():
+            data = await self.status_api.fetch_status()
+            if not data:
+                await reply(ctx, error("Failed to fetch status from Activision API."))
+                return
+
+            # Get all unique game titles from current issues and historical data
+            current_games = self.status_api.get_all_games(data)
+            server_statuses = self.status_api.get_server_statuses(data)
+            
+            # Also check recently resolved for more game titles
+            recently_resolved = self.status_api.get_recently_resolved(data)
+            all_games = set(current_games)
+            
+            # Extract games from server statuses
+            for status in server_statuses:
+                if status.get("gameTitle"):
+                    all_games.add(status["gameTitle"])
+
+            if not all_games:
+                await reply(ctx, info("No games found in current API data. This might mean all services are online."))
+                return
+
+            games_list = sorted(all_games)
+            games_text = "\n".join(f"• **{game}**" for game in games_list)
+            
+            # Split into multiple embeds if too long
+            if len(games_text) > 4096:
+                # Split into chunks
+                chunks = []
+                current_chunk = []
+                current_length = 0
+                
+                for game in games_list:
+                    game_line = f"• **{game}**\n"
+                    if current_length + len(game_line) > 1024:
+                        chunks.append("\n".join(current_chunk))
+                        current_chunk = [game_line.strip()]
+                        current_length = len(game_line)
+                    else:
+                        current_chunk.append(game_line.strip())
+                        current_length += len(game_line)
+                
+                if current_chunk:
+                    chunks.append("\n".join(current_chunk))
+                
+                for i, chunk in enumerate(chunks):
+                    embed = discord.Embed(
+                        title=f"Available Games ({i+1}/{len(chunks)})",
+                        description=chunk,
+                        color=discord.Color.blue()
+                    )
+                    embed.set_footer(text="Use these exact titles when adding filters.")
+                    await reply(ctx, embed=embed)
+            else:
+                embed = discord.Embed(
+                    title="Available Games",
+                    description=games_text,
+                    color=discord.Color.blue()
+                )
+                embed.set_footer(text=f"Total: {len(games_list)} games | Use these exact titles when adding filters.")
+                await reply(ctx, embed=embed)
 
     @activision_group.command(name="interval")
     async def interval_command(self, ctx: commands.Context, seconds: Optional[int] = None) -> None:
