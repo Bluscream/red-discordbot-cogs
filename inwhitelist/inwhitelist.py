@@ -14,6 +14,14 @@ from .pcx_lib import checkmark
 
 log = getLogger("red.blu.inwhitelist")
 
+# Check if AutoMod enums are available (discord.py 2.3+)
+try:
+    from discord import AutoModEventType, AutoModTriggerType, AutoModActionType
+    HAS_AUTOMOD_ENUMS = True
+except ImportError:
+    HAS_AUTOMOD_ENUMS = False
+    log.warning("AutoMod enums not available, using integer values")
+
 # Regex patterns for detecting Discord invites
 INVITE_PATTERNS = [
     r"(https?://(www\.)?)?discord\.gg/[a-zA-Z0-9]{7,10}",
@@ -208,25 +216,45 @@ class InWhitelist(commands.Cog):
         
         # Create the rule
         try:
+            # Build actions list
+            actions = []
+            for action in rule_config["actions"]:
+                action_metadata = None
+                if action["metadata"]:
+                    channel_id = action["metadata"].get("channel_id")
+                    action_metadata = discord.AutoModActionMetadata(
+                        channel_id=int(channel_id) if channel_id else None,
+                        custom_message=action["metadata"].get("custom_message")
+                    )
+                
+                # Handle both enum and integer types
+                action_type = action["type"]
+                if HAS_AUTOMOD_ENUMS:
+                    action_type = AutoModActionType(action_type)
+                
+                actions.append(discord.AutoModAction(
+                    type=action_type,
+                    metadata=action_metadata
+                ))
+            
+            # Handle both enum and integer types for event_type and trigger_type
+            event_type = rule_config["event_type"]
+            trigger_type = rule_config["trigger_type"]
+            
+            if HAS_AUTOMOD_ENUMS:
+                event_type = AutoModEventType(event_type)
+                trigger_type = AutoModTriggerType(trigger_type)
+            
             rule = await guild.create_automod_rule(
                 name=rule_config["name"],
-                event_type=discord.AutoModEventType(rule_config["event_type"]),
-                trigger_type=discord.AutoModTriggerType(rule_config["trigger_type"]),
+                event_type=event_type,
+                trigger_type=trigger_type,
                 trigger_metadata=discord.AutoModTriggerMetadata(
                     keyword_filter=rule_config["trigger_metadata"]["keyword_filter"],
                     regex_patterns=rule_config["trigger_metadata"]["regex_patterns"],
                     allow_list=rule_config["trigger_metadata"]["allow_list"]
                 ),
-                actions=[
-                    discord.AutoModAction(
-                        type=discord.AutoModActionType(action["type"]),
-                        metadata=discord.AutoModActionMetadata(
-                            channel_id=int(action["metadata"].get("channel_id", 0)) if action["metadata"].get("channel_id") else None,
-                            custom_message=action["metadata"].get("custom_message")
-                        ) if action["metadata"] else None
-                    )
-                    for action in rule_config["actions"]
-                ],
+                actions=actions,
                 enabled=rule_config["enabled"],
                 exempt_roles=rule_config["exempt_roles"],
                 exempt_channels=rule_config["exempt_channels"],
@@ -504,12 +532,22 @@ class InWhitelist(commands.Cog):
         embed.add_field(name="Creator", value=f"<@{rule.creator_id}>", inline=True)
         
         # Trigger info
-        trigger_type_names = {
-            discord.AutoModTriggerType.keyword: "Keyword Filter",
-            discord.AutoModTriggerType.spam: "Spam",
-            discord.AutoModTriggerType.keyword_preset: "Keyword Preset",
-            discord.AutoModTriggerType.mention_spam: "Mention Spam"
-        }
+        trigger_type_names = {}
+        if HAS_AUTOMOD_ENUMS:
+            trigger_type_names = {
+                AutoModTriggerType.keyword: "Keyword Filter",
+                AutoModTriggerType.spam: "Spam",
+                AutoModTriggerType.keyword_preset: "Keyword Preset",
+                AutoModTriggerType.mention_spam: "Mention Spam"
+            }
+        else:
+            # Fallback for integer values
+            trigger_type_names = {
+                1: "Keyword Filter",
+                3: "Spam",
+                4: "Keyword Preset",
+                5: "Mention Spam"
+            }
         embed.add_field(
             name="Trigger Type",
             value=trigger_type_names.get(rule.trigger_type, str(rule.trigger_type)),
@@ -529,11 +567,20 @@ class InWhitelist(commands.Cog):
         embed.add_field(name="Whitelisted Invites", value=str(len(allowlist)), inline=True)
         
         # Actions
-        action_types = {
-            discord.AutoModActionType.block_message: "🚫 Block Message",
-            discord.AutoModActionType.send_alert_message: "📢 Send Alert",
-            discord.AutoModActionType.timeout: "⏱️ Timeout User"
-        }
+        action_types = {}
+        if HAS_AUTOMOD_ENUMS:
+            action_types = {
+                AutoModActionType.block_message: "🚫 Block Message",
+                AutoModActionType.send_alert_message: "📢 Send Alert",
+                AutoModActionType.timeout: "⏱️ Timeout User"
+            }
+        else:
+            # Fallback for integer values
+            action_types = {
+                1: "🚫 Block Message",
+                2: "📢 Send Alert",
+                3: "⏱️ Timeout User"
+            }
         actions_text = "\n".join([action_types.get(action.type, str(action.type)) for action in rule.actions])
         embed.add_field(name="Actions", value=actions_text, inline=True)
         
