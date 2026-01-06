@@ -302,7 +302,7 @@ class InWhitelist(commands.Cog):
             log.error(f"Error updating AutoMod rule: {e}")
             raise ValueError(f"Failed to update AutoMod rule: {e}")
 
-    @commands.group(name="invitewl", aliases=["invitewhitelist"], invoke_without_command=True)
+    @commands.group(name="invitewl", aliases=["invitewhitelist","iwl"], invoke_without_command=True)
     @checks.admin_or_permissions(manage_guild=True)
     async def invite_whitelist(self, ctx: commands.Context, invite_code: Optional[str] = None):
         """
