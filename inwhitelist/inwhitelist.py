@@ -11,24 +11,21 @@ from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import error, info, success, warning, box
 
 from .pcx_lib import checkmark
-from .automod_compat import (
-    get_automod_enums,
-    get_automod_classes,
-    AutoModRuleEventType as CompatEventType,
-    AutoModRuleTriggerType as CompatTriggerType,
-    AutoModRuleActionType as CompatActionType
-)
 
 log = getLogger("red.blu.inwhitelist")
 
-# Try to use native discord.py AutoMod enums, fall back to compatibility layer
-AutoModEventType, AutoModTriggerType, AutoModActionType, HAS_NATIVE_ENUMS = get_automod_enums()
-AutoModAction, AutoModActionMetadata, AutoModTrigger, HAS_NATIVE_CLASSES = get_automod_classes()
+# Import AutoMod types directly from discord.py (v2.6.3+)
+# Note: discord.py uses "AutoModRule*" prefix for enums
+from discord import (
+    AutoModRuleTriggerType as AutoModTriggerType,
+    AutoModRuleEventType as AutoModEventType,
+    AutoModRuleActionType as AutoModActionType,
+    AutoModAction,
+    AutoModTrigger
+)
 
-if not HAS_NATIVE_ENUMS:
-    log.info("Using compatibility AutoMod enums (discord.py version doesn't have native support)")
-if not HAS_NATIVE_CLASSES:
-    log.info("Using compatibility AutoMod classes (discord.py version doesn't have native support)")
+# For actions, we'll construct them directly without metadata class
+# since discord.py handles this internally
 
 # Regex patterns for detecting Discord invites
 INVITE_PATTERNS = [
@@ -227,21 +224,19 @@ class InWhitelist(commands.Cog):
             # Build actions list
             actions = []
             for action in rule_config["actions"]:
-                action_metadata = None
-                if action["metadata"]:
-                    channel_id = action["metadata"].get("channel_id")
-                    action_metadata = AutoModActionMetadata(
-                        channel_id=int(channel_id) if channel_id else None,
-                        custom_message=action["metadata"].get("custom_message")
-                    )
+                # AutoModRuleAction takes parameters directly, not via metadata object
+                action_kwargs = {"type": AutoModActionType(action["type"])}
                 
-                # Create action with proper types
-                action_type = AutoModActionType(action["type"])
+                if action.get("metadata"):
+                    metadata = action["metadata"]
+                    if "channel_id" in metadata and metadata["channel_id"]:
+                        action_kwargs["channel_id"] = int(metadata["channel_id"])
+                    if "custom_message" in metadata and metadata["custom_message"]:
+                        action_kwargs["custom_message"] = metadata["custom_message"]
+                    if "duration" in metadata and metadata["duration"]:
+                        action_kwargs["duration"] = metadata["duration"]
                 
-                actions.append(AutoModAction(
-                    type=action_type,
-                    metadata=action_metadata
-                ))
+                actions.append(AutoModAction(**action_kwargs))
             
             # Create event and trigger
             event_type = AutoModEventType(rule_config["event_type"])
