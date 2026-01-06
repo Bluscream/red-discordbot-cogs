@@ -23,7 +23,7 @@ log = getLogger("red.blu.inwhitelist")
 
 # Try to use native discord.py AutoMod enums, fall back to compatibility layer
 AutoModEventType, AutoModTriggerType, AutoModActionType, HAS_NATIVE_ENUMS = get_automod_enums()
-AutoModAction, AutoModActionMetadata, AutoModTriggerMetadata, HAS_NATIVE_CLASSES = get_automod_classes()
+AutoModAction, AutoModActionMetadata, AutoModTrigger, AutoModTriggerMetadata, HAS_NATIVE_CLASSES = get_automod_classes()
 
 if not HAS_NATIVE_ENUMS:
     log.info("Using compatibility AutoMod enums (discord.py version doesn't have native support)")
@@ -243,19 +243,21 @@ class InWhitelist(commands.Cog):
                     metadata=action_metadata
                 ))
             
-            # Create event and trigger types
+            # Create event and trigger
             event_type = AutoModEventType(rule_config["event_type"])
-            trigger_type = AutoModTriggerType(rule_config["trigger_type"])
+            trigger = AutoModTrigger(
+                type=AutoModTriggerType(rule_config["trigger_type"]),
+                metadata=AutoModTriggerMetadata(
+                    keyword_filter=rule_config["trigger_metadata"]["keyword_filter"],
+                    regex_patterns=rule_config["trigger_metadata"]["regex_patterns"],
+                    allow_list=rule_config["trigger_metadata"]["allow_list"]
+                )
+            )
             
             rule = await guild.create_automod_rule(
                 name=rule_config["name"],
                 event_type=event_type,
-                trigger_type=trigger_type,
-                trigger_metadata=AutoModTriggerMetadata(
-                    keyword_filter=rule_config["trigger_metadata"]["keyword_filter"],
-                    regex_patterns=rule_config["trigger_metadata"]["regex_patterns"],
-                    allow_list=rule_config["trigger_metadata"]["allow_list"]
-                ),
+                trigger=trigger,
                 actions=actions,
                 enabled=rule_config["enabled"],
                 exempt_roles=rule_config["exempt_roles"],
@@ -277,12 +279,17 @@ class InWhitelist(commands.Cog):
     async def update_rule_allowlist(self, rule: discord.AutoModRule, new_allowlist: list) -> discord.AutoModRule:
         """Update the allow list of an AutoMod rule."""
         try:
-            updated_rule = await rule.edit(
-                trigger_metadata=AutoModTriggerMetadata(
+            # Create a new trigger with updated metadata
+            updated_trigger = AutoModTrigger(
+                type=rule.trigger.type,
+                metadata=AutoModTriggerMetadata(
                     keyword_filter=rule.trigger_metadata.keyword_filter or [],
                     regex_patterns=rule.trigger_metadata.regex_patterns or [],
                     allow_list=new_allowlist
-                ),
+                )
+            )
+            updated_rule = await rule.edit(
+                trigger=updated_trigger,
                 reason="Updated by InWhitelist cog"
             )
             return updated_rule

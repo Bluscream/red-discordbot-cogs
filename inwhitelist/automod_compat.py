@@ -18,6 +18,7 @@ __all__ = (
     'AutoModAction',
     'AutoModActionMetadata',
     'AutoModTriggerMetadata',
+    'AutoModTrigger',
 )
 
 
@@ -119,6 +120,33 @@ class AutoModAction:
         return f'<AutoModAction type={self.type}>'
 
 
+class AutoModTrigger:
+    """
+    Represents a trigger for an AutoMod rule.
+    
+    Attributes
+    ----------
+    type : AutoModRuleTriggerType or int
+        The type of trigger.
+    metadata : AutoModTriggerMetadata
+        The metadata for this trigger.
+    """
+    
+    __slots__ = ('type', 'metadata')
+    
+    def __init__(
+        self,
+        *,
+        type: Any,  # Can be enum or int
+        metadata: Optional['AutoModTriggerMetadata'] = None
+    ):
+        self.type = type
+        self.metadata = metadata or AutoModTriggerMetadata()
+    
+    def __repr__(self) -> str:
+        return f'<AutoModTrigger type={self.type}>'
+
+
 class AutoModTriggerMetadata:
     """
     Represents metadata for an AutoMod trigger.
@@ -216,15 +244,16 @@ def get_automod_classes():
     Returns
     -------
     tuple
-        A tuple of (AutoModAction, AutoModActionMetadata, AutoModTriggerMetadata, has_native)
+        A tuple of (AutoModAction, AutoModActionMetadata, AutoModTrigger, AutoModTriggerMetadata, has_native)
         where has_native indicates if native discord.py classes were used.
     """
     try:
         from discord import (
             AutoModAction as NativeAction,
             AutoModActionMetadata as NativeActionMetadata,
+            AutoModTrigger as NativeTrigger,
             AutoModTriggerMetadata as NativeTriggerMetadata
         )
-        return (NativeAction, NativeActionMetadata, NativeTriggerMetadata, True)
+        return (NativeAction, NativeActionMetadata, NativeTrigger, NativeTriggerMetadata, True)
     except ImportError:
-        return (AutoModAction, AutoModActionMetadata, AutoModTriggerMetadata, False)
+        return (AutoModAction, AutoModActionMetadata, AutoModTrigger, AutoModTriggerMetadata, False)
