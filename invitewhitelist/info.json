@@ -1,0 +1,14 @@
+{
+    "author": ["Bluscream","Cursor.AI"],
+    "description": "Manage Discord invite whitelists in AutoMod rules",
+    "install_msg": "Thank you for installing InviteWhitelist! Use `[p]invite` to manage invite whitelists in AutoMod rules.",
+    "short": "Manage Discord invite whitelists in AutoMod",
+    "tags": ["automod", "invites", "moderation", "whitelist"],
+    "type": "COG",
+    "end_user_data_statement": "This cog stores invite codes and their associated server names locally for display purposes.",
+    "min_bot_version": "3.5.0",
+    "hidden": false,
+    "disabled": false,
+    "required_cogs": {},
+    "requirements": []
+}
