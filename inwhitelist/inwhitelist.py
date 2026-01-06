@@ -533,16 +533,19 @@ class InWhitelist(commands.Cog):
         embed.add_field(name="Status", value="✅ Enabled" if rule.enabled else "❌ Disabled", inline=True)
         embed.add_field(name="Creator", value=f"<@{rule.creator_id}>", inline=True)
         
-        # Trigger info
+        # Trigger info - use integer values for compatibility
+        trigger_type_value = rule.trigger_type.value if hasattr(rule.trigger_type, 'value') else rule.trigger_type
         trigger_type_names = {
-            AutoModTriggerType.keyword: "Keyword Filter",
-            AutoModTriggerType.spam: "Spam",
-            AutoModTriggerType.keyword_preset: "Keyword Preset",
-            AutoModTriggerType.mention_spam: "Mention Spam"
+            1: "Keyword Filter",        # keyword
+            2: "Harmful Link",          # deprecated
+            3: "Spam",                  # spam
+            4: "Keyword Preset",        # keyword_preset
+            5: "Mention Spam",          # mention_spam
+            6: "Member Profile"         # member_profile
         }
         embed.add_field(
             name="Trigger Type",
-            value=trigger_type_names.get(rule.trigger_type, str(rule.trigger_type)),
+            value=trigger_type_names.get(trigger_type_value, f"Unknown ({trigger_type_value})"),
             inline=True
         )
         
@@ -558,13 +561,18 @@ class InWhitelist(commands.Cog):
         allowlist = rule.trigger_metadata.allow_list or []
         embed.add_field(name="Whitelisted Invites", value=str(len(allowlist)), inline=True)
         
-        # Actions
-        action_types = {
-            AutoModActionType.block_message: "🚫 Block Message",
-            AutoModActionType.send_alert_message: "📢 Send Alert",
-            AutoModActionType.timeout: "⏱️ Timeout User"
+        # Actions - use integer values for compatibility
+        action_type_names = {
+            1: "🚫 Block Message",           # block_message
+            2: "📢 Send Alert",              # send_alert_message
+            3: "⏱️ Timeout User",            # timeout
+            4: "🚷 Block Interactions"       # block_member_interactions
         }
-        actions_text = "\n".join([action_types.get(action.type, str(action.type)) for action in rule.actions])
+        action_values = []
+        for action in rule.actions:
+            action_value = action.type.value if hasattr(action.type, 'value') else action.type
+            action_values.append(action_type_names.get(action_value, f"Unknown ({action_value})"))
+        actions_text = "\n".join(action_values)
         embed.add_field(name="Actions", value=actions_text, inline=True)
         
         # Exemptions
