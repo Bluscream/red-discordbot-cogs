@@ -1,4 +1,4 @@
-# InviteWhitelist
+# InWhitelist
 
 A Red-DiscordBot cog for managing Discord invite whitelists through AutoMod rules.
 
@@ -17,8 +17,8 @@ A Red-DiscordBot cog for managing Discord invite whitelists through AutoMod rule
 
 ```
 [p]repo add red-discordbot-cogs https://github.com/Bluscream/red-discordbot-cogs
-[p]cog install red-discordbot-cogs invitewhitelist
-[p]load invitewhitelist
+[p]cog install red-discordbot-cogs inwhitelist
+[p]load inwhitelist
 ```
 
 ## Commands

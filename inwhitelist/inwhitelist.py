@@ -1,4 +1,4 @@
-"""InviteWhitelist cog for Red-DiscordBot"""
+"""InWhitelist cog for Red-DiscordBot"""
 
 from typing import ClassVar, Dict, Optional
 from logging import getLogger
@@ -12,7 +12,7 @@ from redbot.core.utils.chat_formatting import error, info, success, warning, box
 
 from .pcx_lib import checkmark
 
-log = getLogger("red.blu.invitewhitelist")
+log = getLogger("red.blu.inwhitelist")
 
 # Regex patterns for detecting Discord invites
 INVITE_PATTERNS = [
@@ -51,7 +51,7 @@ DEFAULT_RULE_CONFIG = {
 }
 
 
-class InviteWhitelist(commands.Cog):
+class InWhitelist(commands.Cog):
     """Manage Discord invite whitelists in AutoMod rules."""
 
     __author__ = "Bluscream"
@@ -230,7 +230,7 @@ class InviteWhitelist(commands.Cog):
                 enabled=rule_config["enabled"],
                 exempt_roles=rule_config["exempt_roles"],
                 exempt_channels=rule_config["exempt_channels"],
-                reason="Created by InviteWhitelist cog"
+                reason="Created by InWhitelist cog"
             )
             
             # Cache the rule ID
@@ -253,7 +253,7 @@ class InviteWhitelist(commands.Cog):
                     regex_patterns=rule.trigger_metadata.regex_patterns or [],
                     allow_list=new_allowlist
                 ),
-                reason="Updated by InviteWhitelist cog"
+                reason="Updated by InWhitelist cog"
             )
             return updated_rule
         except discord.Forbidden:
@@ -262,12 +262,24 @@ class InviteWhitelist(commands.Cog):
             log.error(f"Error updating AutoMod rule: {e}")
             raise ValueError(f"Failed to update AutoMod rule: {e}")
 
-    @commands.group(name="invite", aliases=["invitewl", "invitewhitelist"])
+    @commands.group(name="invite", aliases=["invitewl", "invitewhitelist"], invoke_without_command=True)
     @checks.admin_or_permissions(manage_guild=True)
-    async def invite_whitelist(self, ctx: commands.Context):
-        """Manage Discord invite whitelist in AutoMod."""
+    async def invite_whitelist(self, ctx: commands.Context, invite_code: Optional[str] = None):
+        """
+        Manage Discord invite whitelist in AutoMod.
+        
+        - `!invite` - List whitelisted invites
+        - `!invite <code>` - Toggle invite in whitelist
+        - `!invite add <code>` - Add invite to whitelist
+        - `!invite remove <code>` - Remove invite from whitelist
+        """
         if ctx.invoked_subcommand is None:
-            await ctx.send_help(ctx.command)
+            if invite_code is None:
+                # Show list
+                await ctx.invoke(self.invite_list)
+            else:
+                # Toggle invite
+                await ctx.invoke(self.invite_toggle, invite_code=invite_code)
 
     @invite_whitelist.command(name="add")
     async def invite_add(self, ctx: commands.Context, invite_code: str):
@@ -547,7 +559,7 @@ class InviteWhitelist(commands.Cog):
             return
         
         try:
-            await rule.edit(enabled=True, reason="Enabled by InviteWhitelist cog")
+            await rule.edit(enabled=True, reason="Enabled by InWhitelist cog")
             await ctx.send(success(f"Enabled AutoMod rule '{DEFAULT_RULE_NAME}'."))
             await checkmark(ctx)
         except discord.Forbidden:
@@ -569,7 +581,7 @@ class InviteWhitelist(commands.Cog):
             return
         
         try:
-            await rule.edit(enabled=False, reason="Disabled by InviteWhitelist cog")
+            await rule.edit(enabled=False, reason="Disabled by InWhitelist cog")
             await ctx.send(success(f"Disabled AutoMod rule '{DEFAULT_RULE_NAME}'."))
             await checkmark(ctx)
         except discord.Forbidden:
@@ -616,19 +628,3 @@ class InviteWhitelist(commands.Cog):
             await checkmark(ctx)
         except ValueError as e:
             await ctx.send(error(str(e)))
-
-    @commands.command(name="invite")
-    @checks.admin_or_permissions(manage_guild=True)
-    async def invite_shortcut(self, ctx: commands.Context, invite_code: Optional[str] = None):
-        """
-        Quick invite whitelist management.
-        
-        - `!invite` - List whitelisted invites
-        - `!invite <code>` - Toggle invite in whitelist
-        """
-        if invite_code is None:
-            # Show list
-            await ctx.invoke(self.invite_list)
-        else:
-            # Toggle invite
-            await ctx.invoke(self.invite_toggle, invite_code=invite_code)
