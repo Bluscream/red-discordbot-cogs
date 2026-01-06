@@ -17,7 +17,6 @@ __all__ = (
     'AutoModRuleActionType',
     'AutoModAction',
     'AutoModActionMetadata',
-    'AutoModTriggerMetadata',
     'AutoModTrigger',
 )
 
@@ -123,84 +122,57 @@ class AutoModAction:
 class AutoModTrigger:
     """
     Represents a trigger for an AutoMod rule.
+    Matches discord.py v2.6.3 structure where properties are directly on the trigger.
     
     Attributes
     ----------
     type : AutoModRuleTriggerType or int
         The type of trigger.
-    metadata : AutoModTriggerMetadata
-        The metadata for this trigger.
-    """
-    
-    __slots__ = ('type', 'metadata')
-    
-    def __init__(
-        self,
-        *,
-        type: Any,  # Can be enum or int
-        metadata: Optional['AutoModTriggerMetadata'] = None
-    ):
-        self.type = type
-        self.metadata = metadata or AutoModTriggerMetadata()
-    
-    def to_metadata_dict(self) -> Optional[Dict[str, Any]]:
-        """Convert trigger metadata to API payload format."""
-        if self.metadata:
-            return self.metadata.to_dict()
-        return None
-    
-    def __repr__(self) -> str:
-        return f'<AutoModTrigger type={self.type}>'
-
-
-class AutoModTriggerMetadata:
-    """
-    Represents metadata for an AutoMod trigger.
-    
-    Attributes
-    ----------
-    keyword_filter : Optional[list[str]]
+    keyword_filter : list[str]
         List of keywords to filter (for keyword trigger type).
-    regex_patterns : Optional[list[str]]
+    regex_patterns : list[str]
         List of regex patterns to match (for keyword trigger type).
-    allow_list : Optional[list[str]]
+    allow_list : list[str]
         List of keywords to allow/exempt (for keyword trigger type).
-    presets : Optional[list[int]]
+    presets : list[int]
         List of preset keyword filters (for keyword_preset trigger type).
-    mention_total_limit : Optional[int]
+    mention_limit : int
         Maximum mentions allowed (for mention_spam trigger type).
-    mention_raid_protection_enabled : Optional[bool]
+    mention_raid_protection : bool
         Whether mention raid protection is enabled (for mention_spam trigger type).
     """
     
     __slots__ = (
+        'type',
         'keyword_filter',
         'regex_patterns',
         'allow_list',
         'presets',
-        'mention_total_limit',
-        'mention_raid_protection_enabled'
+        'mention_limit',
+        'mention_raid_protection'
     )
     
     def __init__(
         self,
         *,
+        type: Any,  # Can be enum or int
         keyword_filter: Optional[list] = None,
         regex_patterns: Optional[list] = None,
         allow_list: Optional[list] = None,
         presets: Optional[list] = None,
-        mention_total_limit: Optional[int] = None,
-        mention_raid_protection_enabled: Optional[bool] = None
+        mention_limit: Optional[int] = None,
+        mention_raid_protection: Optional[bool] = None
     ):
+        self.type = type
         self.keyword_filter = keyword_filter or []
         self.regex_patterns = regex_patterns or []
         self.allow_list = allow_list or []
         self.presets = presets or []
-        self.mention_total_limit = mention_total_limit
-        self.mention_raid_protection_enabled = mention_raid_protection_enabled
+        self.mention_limit = mention_limit or 0
+        self.mention_raid_protection = mention_raid_protection or False
     
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert metadata to API payload format."""
+    def to_metadata_dict(self) -> Optional[Dict[str, Any]]:
+        """Convert trigger metadata to API payload format."""
         data = {}
         if self.keyword_filter:
             data['keyword_filter'] = self.keyword_filter
@@ -210,14 +182,18 @@ class AutoModTriggerMetadata:
             data['allow_list'] = self.allow_list
         if self.presets:
             data['presets'] = self.presets
-        if self.mention_total_limit is not None:
-            data['mention_total_limit'] = self.mention_total_limit
-        if self.mention_raid_protection_enabled is not None:
-            data['mention_raid_protection_enabled'] = self.mention_raid_protection_enabled
-        return data
+        if self.mention_limit:
+            data['mention_total_limit'] = self.mention_limit
+        if self.mention_raid_protection:
+            data['mention_raid_protection_enabled'] = self.mention_raid_protection
+        return data if data else None
     
     def __repr__(self) -> str:
-        return f'<AutoModTriggerMetadata>'
+        return f'<AutoModTrigger type={self.type}>'
+
+
+# AutoModTriggerMetadata is not a separate class in discord.py v2.6.3
+# All metadata properties are directly on AutoModTrigger
 
 
 def get_automod_enums():
@@ -250,16 +226,15 @@ def get_automod_classes():
     Returns
     -------
     tuple
-        A tuple of (AutoModAction, AutoModActionMetadata, AutoModTrigger, AutoModTriggerMetadata, has_native)
+        A tuple of (AutoModAction, AutoModActionMetadata, AutoModTrigger, has_native)
         where has_native indicates if native discord.py classes were used.
     """
     try:
         from discord import (
             AutoModAction as NativeAction,
             AutoModActionMetadata as NativeActionMetadata,
-            AutoModTrigger as NativeTrigger,
-            AutoModTriggerMetadata as NativeTriggerMetadata
+            AutoModTrigger as NativeTrigger
         )
-        return (NativeAction, NativeActionMetadata, NativeTrigger, NativeTriggerMetadata, True)
+        return (NativeAction, NativeActionMetadata, NativeTrigger, True)
     except ImportError:
-        return (AutoModAction, AutoModActionMetadata, AutoModTrigger, AutoModTriggerMetadata, False)
+        return (AutoModAction, AutoModActionMetadata, AutoModTrigger, False)
