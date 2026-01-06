@@ -230,7 +230,7 @@ class InWhitelist(commands.Cog):
                 action_metadata = None
                 if action["metadata"]:
                     channel_id = action["metadata"].get("channel_id")
-                    action_metadata = discord.AutoModActionMetadata(
+                    action_metadata = AutoModActionMetadata(
                         channel_id=int(channel_id) if channel_id else None,
                         custom_message=action["metadata"].get("custom_message")
                     )
