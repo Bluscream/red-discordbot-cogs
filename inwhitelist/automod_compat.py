@@ -143,6 +143,12 @@ class AutoModTrigger:
         self.type = type
         self.metadata = metadata or AutoModTriggerMetadata()
     
+    def to_metadata_dict(self) -> Optional[Dict[str, Any]]:
+        """Convert trigger metadata to API payload format."""
+        if self.metadata:
+            return self.metadata.to_dict()
+        return None
+    
     def __repr__(self) -> str:
         return f'<AutoModTrigger type={self.type}>'
 
