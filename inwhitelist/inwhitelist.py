@@ -15,17 +15,14 @@ from .pcx_lib import checkmark
 log = getLogger("red.blu.inwhitelist")
 
 # Import AutoMod types directly from discord.py (v2.6.3+)
-# Note: discord.py uses "AutoModRule*" prefix for enums
+# Note: discord.py uses "AutoModRule*" prefix for enums and creation classes
 from discord import (
     AutoModRuleTriggerType as AutoModTriggerType,
     AutoModRuleEventType as AutoModEventType,
     AutoModRuleActionType as AutoModActionType,
-    AutoModAction,
-    AutoModTrigger
+    AutoModRuleAction,  # Used for creating actions
+    AutoModTrigger      # Used for creating triggers
 )
-
-# For actions, we'll construct them directly without metadata class
-# since discord.py handles this internally
 
 # Regex patterns for detecting Discord invites
 INVITE_PATTERNS = [
@@ -225,7 +222,8 @@ class InWhitelist(commands.Cog):
             actions = []
             for action in rule_config["actions"]:
                 # AutoModRuleAction takes parameters directly, not via metadata object
-                action_kwargs = {"type": AutoModActionType(action["type"])}
+                action_type = AutoModActionType(action["type"])
+                action_kwargs = {}
                 
                 if action.get("metadata"):
                     metadata = action["metadata"]
@@ -236,7 +234,20 @@ class InWhitelist(commands.Cog):
                     if "duration" in metadata and metadata["duration"]:
                         action_kwargs["duration"] = metadata["duration"]
                 
-                actions.append(AutoModAction(**action_kwargs))
+                # Create action based on type
+                if action_type == AutoModActionType.send_alert_message:
+                    actions.append(AutoModRuleAction(channel_id=action_kwargs.get("channel_id")))
+                elif action_type == AutoModActionType.timeout:
+                    actions.append(AutoModRuleAction(duration=action_kwargs.get("duration")))
+                elif action_type == AutoModActionType.block_message:
+                    custom_msg = action_kwargs.get("custom_message")
+                    if custom_msg:
+                        actions.append(AutoModRuleAction(custom_message=custom_msg))
+                    else:
+                        actions.append(AutoModRuleAction())
+                else:
+                    # For other action types, try to create with type parameter
+                    actions.append(AutoModRuleAction(type=action_type))
             
             # Create event and trigger
             event_type = AutoModEventType(rule_config["event_type"])
@@ -532,7 +543,7 @@ class InWhitelist(commands.Cog):
         embed.add_field(name="Creator", value=f"<@{rule.creator_id}>", inline=True)
         
         # Trigger info - use integer values for compatibility
-        trigger_type_value = rule.trigger_type.value if hasattr(rule.trigger_type, 'value') else rule.trigger_type
+        trigger_type_value = rule.trigger.type.value if hasattr(rule.trigger.type, 'value') else rule.trigger.type
         trigger_type_names = {
             1: "Keyword Filter",        # keyword
             2: "Harmful Link",          # deprecated
