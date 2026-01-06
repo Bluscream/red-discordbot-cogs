@@ -214,7 +214,8 @@ class InWhitelist(commands.Cog):
         if initial_invite:
             invite_code = self.extract_invite_code(initial_invite)
             if invite_code:
-                rule_config["trigger_metadata"]["allow_list"] = [f"*{invite_code}*"]
+                # Use */ prefix to match Discord invite URLs (discord.gg/code or /invite/code)
+                rule_config["trigger_metadata"]["allow_list"] = [f"*/{invite_code}*"]
         
         # Create the rule
         try:
@@ -364,7 +365,8 @@ class InWhitelist(commands.Cog):
         
         # Check if already whitelisted
         current_allowlist = rule.trigger.allow_list or []
-        wildcard_code = f"*{code}*"
+        # Use */ prefix to match Discord invite URLs (discord.gg/code or /invite/code)
+        wildcard_code = f"*/{code}*"
         
         if any(code in item for item in current_allowlist):
             await ctx.send(warning(f"Invite `{code}` is already whitelisted."))
