@@ -283,8 +283,8 @@ class InWhitelist(commands.Cog):
             updated_trigger = AutoModTrigger(
                 type=rule.trigger.type,
                 metadata=AutoModTriggerMetadata(
-                    keyword_filter=rule.trigger_metadata.keyword_filter or [],
-                    regex_patterns=rule.trigger_metadata.regex_patterns or [],
+                    keyword_filter=rule.trigger.metadata.keyword_filter or [],
+                    regex_patterns=rule.trigger.metadata.regex_patterns or [],
                     allow_list=new_allowlist
                 )
             )
@@ -361,7 +361,7 @@ class InWhitelist(commands.Cog):
                 return
         
         # Check if already whitelisted
-        current_allowlist = rule.trigger_metadata.allow_list or []
+        current_allowlist = rule.trigger.metadata.allow_list or []
         wildcard_code = f"*{code}*"
         
         if any(code in item for item in current_allowlist):
@@ -399,7 +399,7 @@ class InWhitelist(commands.Cog):
             return
         
         # Check if whitelisted
-        current_allowlist = rule.trigger_metadata.allow_list or []
+        current_allowlist = rule.trigger.metadata.allow_list or []
         
         # Find matching entries
         matching_entries = [item for item in current_allowlist if code in item]
@@ -442,7 +442,7 @@ class InWhitelist(commands.Cog):
             return
         
         # Check if already whitelisted
-        current_allowlist = rule.trigger_metadata.allow_list or []
+        current_allowlist = rule.trigger.metadata.allow_list or []
         
         if any(code in item for item in current_allowlist):
             # Remove it
@@ -462,7 +462,7 @@ class InWhitelist(commands.Cog):
             return
         
         # Get allow list
-        allowlist = rule.trigger_metadata.allow_list or []
+        allowlist = rule.trigger.metadata.allow_list or []
         
         if not allowlist:
             await ctx.send(info("No invites are currently whitelisted."))
@@ -557,7 +557,7 @@ class InWhitelist(commands.Cog):
         )
         
         # Patterns
-        patterns = rule.trigger_metadata.regex_patterns or []
+        patterns = rule.trigger.metadata.regex_patterns or []
         if patterns:
             pattern_text = "\n".join([f"`{p[:50]}{'...' if len(p) > 50 else ''}`" for p in patterns[:3]])
             if len(patterns) > 3:
@@ -565,7 +565,7 @@ class InWhitelist(commands.Cog):
             embed.add_field(name="Regex Patterns", value=pattern_text, inline=False)
         
         # Whitelist count
-        allowlist = rule.trigger_metadata.allow_list or []
+        allowlist = rule.trigger.metadata.allow_list or []
         embed.add_field(name="Whitelisted Invites", value=str(len(allowlist)), inline=True)
         
         # Actions - use integer values for compatibility
@@ -643,7 +643,7 @@ class InWhitelist(commands.Cog):
             await ctx.send(error(f"AutoMod rule '{DEFAULT_RULE_NAME}' not found."))
             return
         
-        allowlist = rule.trigger_metadata.allow_list or []
+        allowlist = rule.trigger.metadata.allow_list or []
         if not allowlist:
             await ctx.send(info("No invites to clear."))
             return
