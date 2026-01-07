@@ -3,6 +3,7 @@
 from typing import ClassVar, Dict, Optional
 from logging import getLogger
 import re
+from datetime import datetime
 
 import discord
 import aiohttp
@@ -13,6 +14,15 @@ from redbot.core.utils.chat_formatting import error, info, success, warning, box
 from .pcx_lib import checkmark
 
 log = getLogger("red.blu.inwhitelist")
+
+def _parse_datetime(dt_str: Optional[str]) -> Optional[datetime]:
+    """Parse ISO datetime string back to datetime object."""
+    if dt_str is None:
+        return None
+    try:
+        return datetime.fromisoformat(dt_str)
+    except (ValueError, TypeError):
+        return None
 
 # Import AutoMod types directly from discord.py (v2.6.3+)
 # Note: discord.py uses "AutoModRule*" prefix for enums and creation classes
@@ -114,8 +124,8 @@ class InWhitelist(commands.Cog):
                 "uses": invite.uses,
                 "max_uses": invite.max_uses,
                 "temporary": invite.temporary,
-                "created_at": invite.created_at,
-                "expires_at": invite.expires_at
+                "created_at": invite.created_at.isoformat() if invite.created_at else None,
+                "expires_at": invite.expires_at.isoformat() if invite.expires_at else None
             }
         except discord.NotFound:
             log.warning(f"Invite {invite_code} not found")
@@ -515,8 +525,8 @@ class InWhitelist(commands.Cog):
                 uses = cached_info.get("uses")
                 max_uses = cached_info.get("max_uses")
                 temporary = cached_info.get("temporary", False)
-                created_at = cached_info.get("created_at")
-                expires_at = cached_info.get("expires_at")
+                created_at = _parse_datetime(cached_info.get("created_at"))
+                expires_at = _parse_datetime(cached_info.get("expires_at"))
             else:
                 # Try to resolve fresh invite info
                 invite_info = await self.resolve_invite(code)
@@ -531,8 +541,8 @@ class InWhitelist(commands.Cog):
                     uses = invite_info["uses"]
                     max_uses = invite_info["max_uses"]
                     temporary = invite_info["temporary"]
-                    created_at = invite_info["created_at"]
-                    expires_at = invite_info["expires_at"]
+                    created_at = _parse_datetime(invite_info["created_at"])
+                    expires_at = _parse_datetime(invite_info["expires_at"])
                 else:
                     # Use basic cached info or show as expired
                     if cached_info:
@@ -833,6 +843,125 @@ class InWhitelist(commands.Cog):
         try:
             await self.update_rule_allowlist(rule, [])
             await ctx.reply(success(f"{ctx.author.mention} Cleared {len(allowlist)} invite(s) from whitelist."))
+            await checkmark(ctx)
+        except ValueError as e:
+            await ctx.reply(error(f"{ctx.author.mention} {str(e)}"))
+
+    @invite_whitelist.command(name="prune")
+    async def invite_prune(self, ctx: commands.Context):
+        """Remove invalid/expired invites from the whitelist."""
+        # Find rule
+        rule = await self.find_invite_rule(ctx.guild)
+        
+        if not rule:
+            await ctx.reply(error(f"{ctx.author.mention} AutoMod rule '{DEFAULT_RULE_NAME}' not found."))
+            return
+        
+        # Get allow list
+        allowlist = rule.trigger.allow_list or []
+        
+        if not allowlist:
+            await ctx.reply(info(f"{ctx.author.mention} No invites to prune."))
+            return
+        
+        # Extract invite codes from wildcards
+        invite_codes = []
+        for item in allowlist:
+            # Remove wildcards and extract code
+            cleaned = item.replace("*", "").replace("/", "")
+            # Extract just the invite code part
+            code = self.extract_invite_code(cleaned)
+            if code:
+                invite_codes.append(code)
+        
+        # Check each invite
+        invalid_invites = []
+        valid_invites = []
+        
+        await ctx.reply(info(f"{ctx.author.mention} Checking {len(invite_codes)} invite(s) for validity..."))
+        
+        for code in invite_codes:
+            try:
+                # Try to resolve the invite
+                invite_info = await self.resolve_invite(code)
+                if invite_info:
+                    valid_invites.append(code)
+                else:
+                    invalid_invites.append(code)
+            except Exception:
+                # Any error means the invite is invalid
+                invalid_invites.append(code)
+        
+        if not invalid_invites:
+            await ctx.reply(success(f"{ctx.author.mention} All {len(valid_invites)} invites are valid. Nothing to prune."))
+            await checkmark(ctx)
+            return
+        
+        # Build embed showing what will be removed
+        embed = discord.Embed(
+            title=f"Pruning {len(invalid_invites)} Invalid Invites",
+            description=f"Found {len(invalid_invites)} invalid invite(s) out of {len(invite_codes)} total.",
+            color=discord.Color.orange()
+        )
+        
+        # List invalid invites
+        invalid_list = []
+        for code in invalid_invites:
+            invalid_list.append(f"`{code}` - *Invalid/Expired*")
+        
+        # Limit display to prevent embed overflow
+        if len(invalid_list) > 10:
+            invalid_text = "\n".join(invalid_list[:10]) + f"\n*+{len(invalid_list) - 10} more*"
+        else:
+            invalid_text = "\n".join(invalid_list)
+        
+        embed.add_field(name="Invalid Invites to Remove", value=invalid_text, inline=False)
+        
+        # Show valid invites count
+        if valid_invites:
+            embed.add_field(name="Valid Invites", value=f"{len(valid_invites)} invites will be kept", inline=False)
+        
+        embed.set_footer(text="Reply with 'CONFIRM PRUNE' to proceed or anything else to cancel")
+        
+        await ctx.reply(embed=embed)
+        
+        # Wait for confirmation
+        def check(message):
+            return (message.author == ctx.author and 
+                   message.channel == ctx.channel)
+        
+        try:
+            response = await self.bot.wait_for('message', check=check, timeout=30.0)
+            if response.content != 'CONFIRM PRUNE':
+                await ctx.reply(f"{ctx.author.mention} Prune cancelled.")
+                return
+        except Exception:
+            await ctx.reply(f"{ctx.author.mention} Prune cancelled due to timeout.")
+            return
+        
+        # Remove invalid invites from allowlist
+        new_allowlist = []
+        for item in allowlist:
+            # Check if this item contains any of the invalid codes
+            is_invalid = False
+            for invalid_code in invalid_invites:
+                if invalid_code in item:
+                    is_invalid = True
+                    break
+            if not is_invalid:
+                new_allowlist.append(item)
+        
+        try:
+            await self.update_rule_allowlist(rule, new_allowlist)
+            
+            # Clear cached info for invalid invites
+            guild_config = self.config.guild(ctx.guild)
+            async with guild_config.invite_cache() as cache:
+                for code in invalid_invites:
+                    if code in cache:
+                        del cache[code]
+            
+            await ctx.reply(success(f"{ctx.author.mention} Pruned {len(invalid_invites)} invalid invite(s). {len(valid_invites)} valid invite(s) remain."))
             await checkmark(ctx)
         except ValueError as e:
             await ctx.reply(error(f"{ctx.author.mention} {str(e)}"))
