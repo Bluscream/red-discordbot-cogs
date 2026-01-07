@@ -549,7 +549,12 @@ class InWhitelist(commands.Cog):
             
             # Build field value with detailed metadata
             field_value = f"**Guild:** `{server_name}`\n"
-            field_value += f"**Channel:** #{channel_name}\n"
+            # Get channel ID for mention
+            channel_id = cached_info.get("channel_id") if cached_info else None
+            if channel_id:
+                field_value += f"**Channel:** <#{channel_id}> (`{channel_name}`)\n"
+            else:
+                field_value += f"**Channel:** `{channel_name}`\n"
             field_value += f"**Inviter:** @{inviter}\n"
             
             # Add usage information
