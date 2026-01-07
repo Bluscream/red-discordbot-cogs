@@ -497,7 +497,7 @@ class InWhitelist(commands.Cog):
         
         # Build embed
         embed = discord.Embed(
-            title=f"Whitelisted Discord Invites ({len(invite_codes)})",
+            title=f"{len(invite_codes)} Whitelisted Discord Invites",
             description=f"These invites are allowed in the '{DEFAULT_RULE_NAME}' AutoMod rule.",
             color=discord.Color.green()
         )
@@ -684,9 +684,9 @@ class InWhitelist(commands.Cog):
             else:
                 invite_text = "\n".join(invite_list) if invite_list else "None"
             
-            embed.add_field(name=f"Whitelisted Invites ({len(invite_codes)})", value=invite_text, inline=False)
+            embed.add_field(name=f"{len(invite_codes)} Whitelisted Invites", value=invite_text, inline=False)
         else:
-            embed.add_field(name="Whitelisted Invites (0)", value="None", inline=False)
+            embed.add_field(name="0 Whitelisted Invites", value="None", inline=False)
         
         # Actions - use integer values for compatibility
         action_type_names = {
@@ -719,9 +719,9 @@ class InWhitelist(commands.Cog):
             else:
                 roles_text = "\n".join(role_names)
             
-            embed.add_field(name=f"Exempt Roles ({len(rule.exempt_roles)})", value=roles_text, inline=False)
+            embed.add_field(name=f"{len(rule.exempt_roles)} Exempt Roles", value=roles_text, inline=False)
         else:
-            embed.add_field(name="Exempt Roles (0)", value="None", inline=False)
+            embed.add_field(name="0 Exempt Roles", value="None", inline=False)
         
         # Exempt Channels
         if rule.exempt_channels:
@@ -739,9 +739,9 @@ class InWhitelist(commands.Cog):
             else:
                 channels_text = "\n".join(channel_names)
             
-            embed.add_field(name=f"Exempt Channels ({len(rule.exempt_channels)})", value=channels_text, inline=False)
+            embed.add_field(name=f"{len(rule.exempt_channels)} Exempt Channels", value=channels_text, inline=False)
         else:
-            embed.add_field(name="Exempt Channels (0)", value="None", inline=False)
+            embed.add_field(name="0 Exempt Channels", value="None", inline=False)
         
         await ctx.send(embed=embed)
 
