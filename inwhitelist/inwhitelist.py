@@ -65,11 +65,11 @@ def _format_invite_info(code: str, server_name: str, channel_name: str, inviter:
     # Add expiration info
     if expires_at:
         if expires_at > discord.utils.utcnow():
-            field_value += f"**Expires:** `{discord.utils.format_dt(expires_at, style='R')}`\n"
+            field_value += f"**Expires:** {discord.utils.format_dt(expires_at, style='R')}\n"
         else:
-            field_value += f"**Status:** `⚠️ Expired`\n"
+            field_value += f"**Status:** ⚠️ `Expired`\n"
     else:
-        field_value += f"**Status:** `✅ Permanent`\n"
+        field_value += f"**Status:** ✅ `Permanent`\n"
     
     return field_value
 
