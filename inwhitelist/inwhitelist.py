@@ -24,6 +24,55 @@ def _parse_datetime(dt_str: Optional[str]) -> Optional[datetime]:
     except (ValueError, TypeError):
         return None
 
+def _format_invite_info(code: str, server_name: str, channel_name: str, inviter: str, 
+                        uses: Optional[int], max_uses: Optional[int], temporary: Optional[bool],
+                        created_at: Optional[datetime], expires_at: Optional[datetime],
+                        cached_info: Optional[Dict]) -> str:
+    """Format invite information for display in embed fields."""
+    field_value = f"**Guild:** `{server_name}`\n"
+    
+    # Get channel ID for mention
+    channel_id = cached_info.get("channel_id") if cached_info else None
+    if channel_id:
+        field_value += f"**Channel:** <#{channel_id}> (`{channel_name}`)\n"
+    else:
+        field_value += f"**Channel:** `{channel_name}`\n"
+    
+    # Get inviter ID for mention
+    inviter_id = cached_info.get("inviter_id") if cached_info else None
+    if inviter_id:
+        field_value += f"**Inviter:** <@{inviter_id}> (`{inviter}`)\n"
+    else:
+        field_value += f"**Inviter:** `{inviter}`\n"
+    
+    # Add usage information
+    if uses is not None and max_uses is not None:
+        if max_uses == 0:
+            field_value += f"**Uses:** `{uses} (unlimited)`\n"
+        else:
+            field_value += f"**Uses:** `{uses}/{max_uses}`\n"
+    elif uses is not None:
+        field_value += f"**Uses:** `{uses}`\n"
+    
+    # Add temporary status
+    if temporary is not None:
+        field_value += f"**Temporary:** `{'Yes' if temporary else 'No'}`\n"
+    
+    # Add creation date
+    if created_at:
+        field_value += f"**Created:** `{discord.utils.format_dt(created_at, style='R')}`\n"
+    
+    # Add expiration info
+    if expires_at:
+        if expires_at > discord.utils.utcnow():
+            field_value += f"**Expires:** `{discord.utils.format_dt(expires_at, style='R')}`\n"
+        else:
+            field_value += f"**Status:** `⚠️ Expired`\n"
+    else:
+        field_value += f"**Status:** `✅ Permanent`\n"
+    
+    return field_value
+
 # Import AutoMod types directly from discord.py (v2.6.3+)
 # Note: discord.py uses "AutoModRule*" prefix for enums and creation classes
 from discord import (
@@ -557,46 +606,19 @@ class InWhitelist(commands.Cog):
                     created_at = None
                     expires_at = None
             
-            # Build field value with detailed metadata
-            field_value = f"**Guild:** `{server_name}`\n"
-            # Get channel ID for mention
-            channel_id = cached_info.get("channel_id") if cached_info else None
-            if channel_id:
-                field_value += f"**Channel:** <#{channel_id}> (`{channel_name}`)\n"
-            else:
-                field_value += f"**Channel:** `{channel_name}`\n"
-            # Get inviter ID for mention
-            inviter_id = cached_info.get("inviter_id") if cached_info else None
-            if inviter_id:
-                field_value += f"**Inviter:** <@{inviter_id}> (`{inviter}`)\n"
-            else:
-                field_value += f"**Inviter:** `{inviter}`\n"
-            
-            # Add usage information
-            if uses is not None and max_uses is not None:
-                if max_uses == 0:
-                    field_value += f"**Uses:** `{uses} (unlimited)`\n"
-                else:
-                    field_value += f"**Uses:** `{uses}/{max_uses}`\n"
-            elif uses is not None:
-                field_value += f"**Uses:** `{uses}`\n"
-            
-            # Add temporary status
-            if temporary is not None:
-                field_value += f"**Temporary:** `{'Yes' if temporary else 'No'}`\n"
-            
-            # Add creation date
-            if created_at:
-                field_value += f"**Created:** `{discord.utils.format_dt(created_at, style='R')}`\n"
-            
-            # Add expiration info
-            if expires_at:
-                if expires_at > discord.utils.utcnow():
-                    field_value += f"**Expires:** `{discord.utils.format_dt(expires_at, style='R')}`\n"
-                else:
-                    field_value += f"**Status:** `⚠️ Expired`\n"
-            else:
-                field_value += f"**Status:** `✅ Permanent`\n"
+            # Build field value with detailed metadata using helper function
+            field_value = _format_invite_info(
+                code=code,
+                server_name=server_name,
+                channel_name=channel_name,
+                inviter=inviter,
+                uses=uses,
+                max_uses=max_uses,
+                temporary=temporary,
+                created_at=created_at,
+                expires_at=expires_at,
+                cached_info=cached_info
+            )
             
             # Add field (limit to 25 fields total)
             if i <= 25:
