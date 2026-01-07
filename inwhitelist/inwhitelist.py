@@ -343,12 +343,12 @@ class InWhitelist(commands.Cog):
         # Extract invite code
         code = self.extract_invite_code(invite_code)
         if not code:
-            await ctx.send(error(f"Invalid invite format: {invite_code}"))
+            await ctx.reply(error(f"{ctx.author.mention} Invalid invite format: {invite_code}"))
             return
         
         # Check permissions
         if not await self.ensure_automod_enabled(ctx.guild):
-            await ctx.send(error("Bot lacks `Manage Server` permission to manage AutoMod rules."))
+            await ctx.reply(error(f"{ctx.author.mention} Bot lacks `Manage Server` permission to manage AutoMod rules."))
             return
         
         # Find or create rule
@@ -363,13 +363,13 @@ class InWhitelist(commands.Cog):
                 invite_info = await self.cache_invite(ctx.guild.id, code)
                 server_name = invite_info["server_name"] if invite_info else "Unknown Server"
                 
-                await ctx.send(success(
-                    f"Created AutoMod rule '{DEFAULT_RULE_NAME}' and added invite `{code}` ({server_name}) to whitelist."
+                await ctx.reply(success(
+                    f"{ctx.author.mention} Created AutoMod rule '{DEFAULT_RULE_NAME}' and added invite `{code}` ({server_name}) to whitelist."
                 ))
                 await checkmark(ctx)
                 return
             except ValueError as e:
-                await ctx.send(error(str(e)))
+                await ctx.reply(error(str(e)))
                 return
         
         # Check if already whitelisted
@@ -378,7 +378,7 @@ class InWhitelist(commands.Cog):
         wildcard_code = f"*/{code}*"
         
         if any(code in item for item in current_allowlist):
-            await ctx.send(warning(f"Invite `{code}` is already whitelisted."))
+            await ctx.reply(warning(f"{ctx.author.mention} Invite `{code}` is already whitelisted."))
             return
         
         # Add to whitelist
@@ -391,10 +391,10 @@ class InWhitelist(commands.Cog):
             invite_info = await self.cache_invite(ctx.guild.id, code)
             server_name = invite_info["server_name"] if invite_info else "Unknown Server"
             
-            await ctx.send(success(f"Added invite `{code}` ({server_name}) to whitelist."))
+            await ctx.reply(success(f"{ctx.author.mention} Added invite `{code}` ({server_name}) to whitelist."))
             await checkmark(ctx)
         except ValueError as e:
-            await ctx.send(error(str(e)))
+            await ctx.reply(error(f"{ctx.author.mention} {str(e)}"))
 
     @invite_whitelist.command(name="remove", aliases=["rm", "del", "delete"])
     async def invite_remove(self, ctx: commands.Context, invite_code: str):
@@ -402,13 +402,13 @@ class InWhitelist(commands.Cog):
         # Extract invite code
         code = self.extract_invite_code(invite_code)
         if not code:
-            await ctx.send(error(f"Invalid invite format: {invite_code}"))
+            await ctx.reply(error(f"{ctx.author.mention} Invalid invite format: {invite_code}"))
             return
         
         # Find rule
         rule = await self.find_invite_rule(ctx.guild)
         if not rule:
-            await ctx.send(error(f"AutoMod rule '{DEFAULT_RULE_NAME}' not found. Nothing to remove."))
+            await ctx.reply(error(f"{ctx.author.mention} AutoMod rule '{DEFAULT_RULE_NAME}' not found. Nothing to remove."))
             return
         
         # Check if whitelisted
@@ -418,7 +418,7 @@ class InWhitelist(commands.Cog):
         matching_entries = [item for item in current_allowlist if code in item]
         
         if not matching_entries:
-            await ctx.send(warning(f"Invite `{code}` is not in the whitelist."))
+            await ctx.reply(warning(f"{ctx.author.mention} Invite `{code}` is not in the whitelist."))
             return
         
         # Remove from whitelist
@@ -432,10 +432,10 @@ class InWhitelist(commands.Cog):
             invite_cache = await guild_config.invite_cache()
             server_name = invite_cache.get(code, {}).get("server_name", "Unknown Server")
             
-            await ctx.send(success(f"Removed invite `{code}` ({server_name}) from whitelist."))
+            await ctx.reply(success(f"{ctx.author.mention} Removed invite `{code}` ({server_name}) from whitelist."))
             await checkmark(ctx)
         except ValueError as e:
-            await ctx.send(error(str(e)))
+            await ctx.reply(error(f"{ctx.author.mention} {str(e)}"))
 
     @invite_whitelist.command(name="toggle")
     async def invite_toggle(self, ctx: commands.Context, invite_code: str):
@@ -443,7 +443,7 @@ class InWhitelist(commands.Cog):
         # Extract invite code
         code = self.extract_invite_code(invite_code)
         if not code:
-            await ctx.send(error(f"Invalid invite format: {invite_code}"))
+            await ctx.reply(error(f"{ctx.author.mention} Invalid invite format: {invite_code}"))
             return
         
         # Find rule
@@ -471,14 +471,14 @@ class InWhitelist(commands.Cog):
         rule = await self.find_invite_rule(ctx.guild)
         
         if not rule:
-            await ctx.send(info(f"AutoMod rule '{DEFAULT_RULE_NAME}' not found. No invites are whitelisted."))
+            await ctx.reply(info(f"{ctx.author.mention} AutoMod rule '{DEFAULT_RULE_NAME}' not found. No invites are whitelisted."))
             return
         
         # Get allow list
         allowlist = rule.trigger.allow_list or []
         
         if not allowlist:
-            await ctx.send(info("No invites are currently whitelisted."))
+            await ctx.reply(info(f"{ctx.author.mention} No invites are currently whitelisted."))
             return
         
         # Extract invite codes from wildcards
@@ -600,7 +600,7 @@ class InWhitelist(commands.Cog):
         # Add rule info
         embed.set_footer(text=f"Rule ID: {rule.id} | Status: {'✅ Enabled' if rule.enabled else '❌ Disabled'}")
         
-        await ctx.send(embed=embed)
+        await ctx.reply(embed=embed)
 
     @invite_whitelist.command(name="info")
     async def invite_info(self, ctx: commands.Context):
@@ -608,7 +608,7 @@ class InWhitelist(commands.Cog):
         rule = await self.find_invite_rule(ctx.guild)
         
         if not rule:
-            await ctx.send(info(f"AutoMod rule '{DEFAULT_RULE_NAME}' not found."))
+            await ctx.reply(info(f"{ctx.author.mention} AutoMod rule '{DEFAULT_RULE_NAME}' not found."))
             return
         
         # Build embed
@@ -743,7 +743,7 @@ class InWhitelist(commands.Cog):
         else:
             embed.add_field(name="0 Exempt Channels", value="None", inline=False)
         
-        await ctx.send(embed=embed)
+        await ctx.reply(embed=embed)
 
     @invite_whitelist.command(name="enable")
     async def invite_enable(self, ctx: commands.Context):
@@ -751,21 +751,21 @@ class InWhitelist(commands.Cog):
         rule = await self.find_invite_rule(ctx.guild)
         
         if not rule:
-            await ctx.send(error(f"AutoMod rule '{DEFAULT_RULE_NAME}' not found. Use `{ctx.prefix}invite add <code>` to create it."))
+            await ctx.reply(error(f"{ctx.author.mention} AutoMod rule '{DEFAULT_RULE_NAME}' not found. Use `{ctx.prefix}invite add <code>` to create it."))
             return
         
         if rule.enabled:
-            await ctx.send(info("Rule is already enabled."))
+            await ctx.reply(info(f"{ctx.author.mention} Rule is already enabled."))
             return
         
         try:
             await rule.edit(enabled=True, reason="Enabled by InWhitelist cog")
-            await ctx.send(success(f"Enabled AutoMod rule '{DEFAULT_RULE_NAME}'."))
+            await ctx.reply(success(f"{ctx.author.mention} Enabled AutoMod rule '{DEFAULT_RULE_NAME}'."))
             await checkmark(ctx)
         except discord.Forbidden:
-            await ctx.send(error("Bot lacks permission to edit AutoMod rules."))
+            await ctx.reply(error(f"{ctx.author.mention} Bot lacks permission to edit AutoMod rules."))
         except discord.HTTPException as e:
-            await ctx.send(error(f"Failed to enable rule: {e}"))
+            await ctx.reply(error(f"{ctx.author.mention} Failed to enable rule: {e}"))
 
     @invite_whitelist.command(name="disable")
     async def invite_disable(self, ctx: commands.Context):
@@ -773,21 +773,21 @@ class InWhitelist(commands.Cog):
         rule = await self.find_invite_rule(ctx.guild)
         
         if not rule:
-            await ctx.send(error(f"AutoMod rule '{DEFAULT_RULE_NAME}' not found."))
+            await ctx.reply(error(f"{ctx.author.mention} AutoMod rule '{DEFAULT_RULE_NAME}' not found."))
             return
         
         if not rule.enabled:
-            await ctx.send(info("Rule is already disabled."))
+            await ctx.reply(info(f"{ctx.author.mention} Rule is already disabled."))
             return
         
         try:
             await rule.edit(enabled=False, reason="Disabled by InWhitelist cog")
-            await ctx.send(success(f"Disabled AutoMod rule '{DEFAULT_RULE_NAME}'."))
+            await ctx.reply(success(f"{ctx.author.mention} Disabled AutoMod rule '{DEFAULT_RULE_NAME}'."))
             await checkmark(ctx)
         except discord.Forbidden:
-            await ctx.send(error("Bot lacks permission to edit AutoMod rules."))
+            await ctx.reply(error(f"{ctx.author.mention} Bot lacks permission to edit AutoMod rules."))
         except discord.HTTPException as e:
-            await ctx.send(error(f"Failed to disable rule: {e}"))
+            await ctx.reply(error(f"{ctx.author.mention} Failed to disable rule: {e}"))
 
     @invite_whitelist.command(name="clear")
     async def invite_clear(self, ctx: commands.Context):
@@ -795,17 +795,17 @@ class InWhitelist(commands.Cog):
         rule = await self.find_invite_rule(ctx.guild)
         
         if not rule:
-            await ctx.send(error(f"AutoMod rule '{DEFAULT_RULE_NAME}' not found."))
+            await ctx.reply(error(f"{ctx.author.mention} AutoMod rule '{DEFAULT_RULE_NAME}' not found."))
             return
         
         allowlist = rule.trigger.allow_list or []
         if not allowlist:
-            await ctx.send(info("No invites to clear."))
+            await ctx.reply(info(f"{ctx.author.mention} No invites to clear."))
             return
         
         # Confirmation
-        await ctx.send(
-            f"⚠️ **WARNING**: This will remove {len(allowlist)} whitelisted invite(s). "
+        await ctx.reply(
+            f"⚠️ **WARNING**: {ctx.author.mention} This will remove {len(allowlist)} whitelisted invite(s). "
             f"Type `CONFIRM CLEAR` to proceed or anything else to cancel."
         )
         
@@ -816,15 +816,15 @@ class InWhitelist(commands.Cog):
         try:
             response = await self.bot.wait_for('message', check=check, timeout=30.0)
             if response.content != 'CONFIRM CLEAR':
-                await ctx.send("Clear cancelled.")
+                await ctx.reply(f"{ctx.author.mention} Clear cancelled.")
                 return
         except Exception:
-            await ctx.send("Clear cancelled due to timeout.")
+            await ctx.reply(f"{ctx.author.mention} Clear cancelled due to timeout.")
             return
         
         try:
             await self.update_rule_allowlist(rule, [])
-            await ctx.send(success(f"Cleared {len(allowlist)} invite(s) from whitelist."))
+            await ctx.reply(success(f"{ctx.author.mention} Cleared {len(allowlist)} invite(s) from whitelist."))
             await checkmark(ctx)
         except ValueError as e:
-            await ctx.send(error(str(e)))
+            await ctx.reply(error(f"{ctx.author.mention} {str(e)}"))
