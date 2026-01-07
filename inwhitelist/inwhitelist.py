@@ -606,7 +606,7 @@ class InWhitelist(commands.Cog):
                 break
         
         # Add rule info
-        embed.set_footer(text=f"Rule ID: {rule.id} | Status: {'✅ Enabled' if rule.enabled else '❌ Disabled'}")
+        embed.set_footer(text=f"{'✅' if rule.enabled else '❌'} {rule.id}")
         
         await ctx.reply(embed=embed)
 
