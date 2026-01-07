@@ -106,7 +106,16 @@ class InWhitelist(commands.Cog):
             invite = await self.bot.fetch_invite(invite_code)
             return {
                 "server_name": invite.guild.name if invite.guild else "Unknown Server",
-                "server_id": str(invite.guild.id) if invite.guild else None
+                "server_id": str(invite.guild.id) if invite.guild else None,
+                "channel_name": invite.channel.name if invite.channel else "Unknown Channel",
+                "channel_id": str(invite.channel.id) if invite.channel else None,
+                "inviter": invite.inviter.name if invite.inviter else "Unknown",
+                "inviter_id": str(invite.inviter.id) if invite.inviter else None,
+                "uses": invite.uses,
+                "max_uses": invite.max_uses,
+                "temporary": invite.temporary,
+                "created_at": invite.created_at,
+                "expires_at": invite.expires_at
             }
         except discord.NotFound:
             log.warning(f"Invite {invite_code} not found")
@@ -493,32 +502,100 @@ class InWhitelist(commands.Cog):
             color=discord.Color.green()
         )
         
-        # Group invites for display
-        invite_list = []
-        for code in invite_codes:
+        # Add each invite as a separate field with detailed metadata
+        for i, code in enumerate(invite_codes, 1):
+            # Try to get cached info first
             cached_info = invite_cache.get(code)
-            if cached_info:
+            
+            if cached_info and len(cached_info.keys()) > 2:  # Check if we have detailed cached info
+                # Use cached detailed info
                 server_name = cached_info.get("server_name", "Unknown Server")
-                invite_list.append(f"`{code}` - **{server_name}**")
+                channel_name = cached_info.get("channel_name", "Unknown Channel")
+                inviter = cached_info.get("inviter", "Unknown")
+                uses = cached_info.get("uses")
+                max_uses = cached_info.get("max_uses")
+                temporary = cached_info.get("temporary", False)
+                created_at = cached_info.get("created_at")
+                expires_at = cached_info.get("expires_at")
             else:
-                # Try to resolve it now
-                invite_info = await self.cache_invite(ctx.guild.id, code)
+                # Try to resolve fresh invite info
+                invite_info = await self.resolve_invite(code)
                 if invite_info:
+                    # Cache the detailed info
+                    async with guild_config.invite_cache() as cache:
+                        cache[code] = invite_info
+                    
                     server_name = invite_info["server_name"]
-                    invite_list.append(f"`{code}` - **{server_name}**")
+                    channel_name = invite_info["channel_name"]
+                    inviter = invite_info["inviter"]
+                    uses = invite_info["uses"]
+                    max_uses = invite_info["max_uses"]
+                    temporary = invite_info["temporary"]
+                    created_at = invite_info["created_at"]
+                    expires_at = invite_info["expires_at"]
                 else:
-                    invite_list.append(f"`{code}` - *Unknown/Expired*")
-        
-        # Split into chunks if too many
-        chunk_size = 10
-        for i in range(0, len(invite_list), chunk_size):
-            chunk = invite_list[i:i+chunk_size]
-            field_name = f"Invites {i+1}-{min(i+chunk_size, len(invite_list))}" if len(invite_list) > chunk_size else "Invites"
-            embed.add_field(
-                name=field_name,
-                value="\n".join(chunk),
-                inline=False
-            )
+                    # Use basic cached info or show as expired
+                    if cached_info:
+                        server_name = cached_info.get("server_name", "Unknown Server")
+                    else:
+                        server_name = "Unknown/Expired"
+                    channel_name = "Unknown"
+                    inviter = "Unknown"
+                    uses = None
+                    max_uses = None
+                    temporary = None
+                    created_at = None
+                    expires_at = None
+            
+            # Build field value with detailed metadata
+            full_url = f"https://discord.gg/{code}"
+            field_value = f"**URL:** {full_url}\n"
+            field_value += f"**Server:** {server_name}\n"
+            field_value += f"**Channel:** #{channel_name}\n"
+            field_value += f"**Inviter:** {inviter}\n"
+            
+            # Add usage information
+            if uses is not None and max_uses is not None:
+                if max_uses == 0:
+                    field_value += f"**Uses:** {uses} (unlimited)\n"
+                else:
+                    field_value += f"**Uses:** {uses}/{max_uses}\n"
+            elif uses is not None:
+                field_value += f"**Uses:** {uses}\n"
+            
+            # Add temporary status
+            if temporary is not None:
+                field_value += f"**Temporary:** {'Yes' if temporary else 'No'}\n"
+            
+            # Add creation date
+            if created_at:
+                field_value += f"**Created:** {discord.utils.format_dt(created_at, style='R')}\n"
+            
+            # Add expiration info
+            if expires_at:
+                if expires_at > discord.utils.utcnow():
+                    field_value += f"**Expires:** {discord.utils.format_dt(expires_at, style='R')}\n"
+                else:
+                    field_value += f"**Status:** ⚠️ Expired\n"
+            else:
+                field_value += f"**Status:** ✅ Permanent\n"
+            
+            # Add field (limit to 25 fields total)
+            if i <= 25:
+                embed.add_field(
+                    name=f"Invite {i}: {code}",
+                    value=field_value,
+                    inline=False
+                )
+            else:
+                # If we have more than 25 invites, add a note
+                if i == 26:
+                    embed.add_field(
+                        name="⚠️ Field Limit Reached",
+                        value=f"Showing first 25 invites. {len(invite_codes) - 25} more invites not shown due to Discord embed limits.",
+                        inline=False
+                    )
+                break
         
         # Add rule info
         embed.set_footer(text=f"Rule ID: {rule.id} | Status: {'✅ Enabled' if rule.enabled else '❌ Disabled'}")
@@ -568,9 +645,48 @@ class InWhitelist(commands.Cog):
                 pattern_text += f"\n*+{len(patterns) - 3} more patterns*"
             embed.add_field(name="Regex Patterns", value=pattern_text, inline=False)
         
-        # Whitelist count
+        # Whitelisted Invites
         allowlist = rule.trigger.allow_list or []
-        embed.add_field(name="Whitelisted Invites", value=str(len(allowlist)), inline=True)
+        if allowlist:
+            # Extract invite codes from wildcards
+            invite_codes = []
+            for item in allowlist:
+                # Remove wildcards and extract code
+                cleaned = item.replace("*", "").replace("/", "")
+                # Extract just the invite code part
+                code = self.extract_invite_code(cleaned)
+                if code:
+                    invite_codes.append(code)
+            
+            # Get cached server names
+            guild_config = self.config.guild(ctx.guild)
+            invite_cache = await guild_config.invite_cache()
+            
+            # Build invite list
+            invite_list = []
+            for code in invite_codes:
+                cached_info = invite_cache.get(code)
+                if cached_info:
+                    server_name = cached_info.get("server_name", "Unknown Server")
+                    invite_list.append(f"`{code}` - {server_name}")
+                else:
+                    # Try to resolve it now
+                    invite_info = await self.cache_invite(ctx.guild.id, code)
+                    if invite_info:
+                        server_name = invite_info["server_name"]
+                        invite_list.append(f"`{code}` - {server_name}")
+                    else:
+                        invite_list.append(f"`{code}` - *Unknown/Expired*")
+            
+            # Limit display to prevent embed overflow
+            if len(invite_list) > 10:
+                invite_text = "\n".join(invite_list[:10]) + f"\n*+{len(invite_list) - 10} more*"
+            else:
+                invite_text = "\n".join(invite_list) if invite_list else "None"
+            
+            embed.add_field(name=f"Whitelisted Invites ({len(invite_codes)})", value=invite_text, inline=False)
+        else:
+            embed.add_field(name="Whitelisted Invites (0)", value="None", inline=False)
         
         # Actions - use integer values for compatibility
         action_type_names = {
@@ -587,10 +703,45 @@ class InWhitelist(commands.Cog):
         embed.add_field(name="Actions", value=actions_text, inline=True)
         
         # Exemptions
-        exempt_roles = len(rule.exempt_roles)
-        exempt_channels = len(rule.exempt_channels)
-        embed.add_field(name="Exempt Roles", value=str(exempt_roles), inline=True)
-        embed.add_field(name="Exempt Channels", value=str(exempt_channels), inline=True)
+        # Exempt Roles
+        if rule.exempt_roles:
+            role_names = []
+            for role_id in rule.exempt_roles:
+                role = ctx.guild.get_role(role_id)
+                if role:
+                    role_names.append(f"@{role.name}")
+                else:
+                    role_names.append(f"<@&{role_id}> (deleted)")
+            
+            # Limit display to prevent embed overflow
+            if len(role_names) > 10:
+                roles_text = "\n".join(role_names[:10]) + f"\n*+{len(role_names) - 10} more*"
+            else:
+                roles_text = "\n".join(role_names)
+            
+            embed.add_field(name=f"Exempt Roles ({len(rule.exempt_roles)})", value=roles_text, inline=False)
+        else:
+            embed.add_field(name="Exempt Roles (0)", value="None", inline=False)
+        
+        # Exempt Channels
+        if rule.exempt_channels:
+            channel_names = []
+            for channel_id in rule.exempt_channels:
+                channel = ctx.guild.get_channel(channel_id)
+                if channel:
+                    channel_names.append(f"#{channel.name}")
+                else:
+                    channel_names.append(f"<#{channel_id}> (deleted)")
+            
+            # Limit display to prevent embed overflow
+            if len(channel_names) > 10:
+                channels_text = "\n".join(channel_names[:10]) + f"\n*+{len(channel_names) - 10} more*"
+            else:
+                channels_text = "\n".join(channel_names)
+            
+            embed.add_field(name=f"Exempt Channels ({len(rule.exempt_channels)})", value=channels_text, inline=False)
+        else:
+            embed.add_field(name="Exempt Channels (0)", value="None", inline=False)
         
         await ctx.send(embed=embed)
 
