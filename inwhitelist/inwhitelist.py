@@ -548,42 +548,40 @@ class InWhitelist(commands.Cog):
                     expires_at = None
             
             # Build field value with detailed metadata
-            full_url = f"https://discord.gg/{code}"
-            field_value = f"**URL:** {full_url}\n"
-            field_value += f"**Server:** {server_name}\n"
+            field_value = f"**Guild:** `{server_name}`\n"
             field_value += f"**Channel:** #{channel_name}\n"
-            field_value += f"**Inviter:** {inviter}\n"
+            field_value += f"**Inviter:** @{inviter}\n"
             
             # Add usage information
             if uses is not None and max_uses is not None:
                 if max_uses == 0:
-                    field_value += f"**Uses:** {uses} (unlimited)\n"
+                    field_value += f"**Uses:** `{uses} (unlimited)`\n"
                 else:
-                    field_value += f"**Uses:** {uses}/{max_uses}\n"
+                    field_value += f"**Uses:** `{uses}/{max_uses}`\n"
             elif uses is not None:
-                field_value += f"**Uses:** {uses}\n"
+                field_value += f"**Uses:** `{uses}`\n"
             
             # Add temporary status
             if temporary is not None:
-                field_value += f"**Temporary:** {'Yes' if temporary else 'No'}\n"
+                field_value += f"**Temporary:** `{'Yes' if temporary else 'No'}`\n"
             
             # Add creation date
             if created_at:
-                field_value += f"**Created:** {discord.utils.format_dt(created_at, style='R')}\n"
+                field_value += f"**Created:** `{discord.utils.format_dt(created_at, style='R')}`\n"
             
             # Add expiration info
             if expires_at:
                 if expires_at > discord.utils.utcnow():
-                    field_value += f"**Expires:** {discord.utils.format_dt(expires_at, style='R')}\n"
+                    field_value += f"**Expires:** `{discord.utils.format_dt(expires_at, style='R')}`\n"
                 else:
-                    field_value += f"**Status:** ⚠️ Expired\n"
+                    field_value += f"**Status:** `⚠️ Expired`\n"
             else:
-                field_value += f"**Status:** ✅ Permanent\n"
+                field_value += f"**Status:** `✅ Permanent`\n"
             
             # Add field (limit to 25 fields total)
             if i <= 25:
                 embed.add_field(
-                    name=f"Invite {i}: {code}",
+                    name=f"https://discord.gg/{code}",
                     value=field_value,
                     inline=False
                 )
