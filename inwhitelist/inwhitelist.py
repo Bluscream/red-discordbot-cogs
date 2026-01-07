@@ -555,7 +555,12 @@ class InWhitelist(commands.Cog):
                 field_value += f"**Channel:** <#{channel_id}> (`{channel_name}`)\n"
             else:
                 field_value += f"**Channel:** `{channel_name}`\n"
-            field_value += f"**Inviter:** @{inviter}\n"
+            # Get inviter ID for mention
+            inviter_id = cached_info.get("inviter_id") if cached_info else None
+            if inviter_id:
+                field_value += f"**Inviter:** <@{inviter_id}> (`{inviter}`)\n"
+            else:
+                field_value += f"**Inviter:** `{inviter}`\n"
             
             # Add usage information
             if uses is not None and max_uses is not None:
