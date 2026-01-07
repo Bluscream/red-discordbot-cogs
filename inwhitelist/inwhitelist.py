@@ -556,8 +556,8 @@ class InWhitelist(commands.Cog):
         
         # Build embed
         embed = discord.Embed(
-            title=f"{len(invite_codes)} Whitelisted Discord Invites",
-            description=f"These invites are allowed in the '{DEFAULT_RULE_NAME}' AutoMod rule.",
+            title="",
+            description=f"{len(invite_codes)} whitelisted invites in `{DEFAULT_RULE_NAME}`",
             color=discord.Color.green()
         )
         
