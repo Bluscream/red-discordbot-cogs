@@ -869,7 +869,7 @@ class InWhitelist(commands.Cog):
         except ValueError as e:
             await ctx.reply(error(f"{ctx.author.mention} {str(e)}"))
 
-    @invite_whitelist.command(name="prune")
+    @invite_whitelist.command(name="prune", aliases=["cleanup", "clean", "purge"])
     async def invite_prune(self, ctx: commands.Context):
         """Remove invalid/expired invites from the whitelist."""
         # Find rule
