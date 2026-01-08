@@ -706,15 +706,16 @@ class InWhitelist(commands.Cog):
             invite_list = []
             for code in invite_codes:
                 cached_info = invite_cache.get(code)
+                template = "https://discord.gg/{code}: `{name}`"
                 if cached_info:
                     server_name = cached_info.get("server_name", "Unknown Server")
-                    invite_list.append(f"`{code}` - {server_name}")
+                    invite_list.append(template.format(code=code, name=server_name))
                 else:
                     # Try to resolve it now
                     invite_info = await self.cache_invite(ctx.guild.id, code)
                     if invite_info:
                         server_name = invite_info["server_name"]
-                        invite_list.append(f"`{code}` - {server_name}")
+                        invite_list.append(template.format(code=code, name=server_name))
                     else:
                         invite_list.append(f"`{code}` - *Unknown/Expired*")
             
@@ -743,18 +744,11 @@ class InWhitelist(commands.Cog):
         embed.add_field(name="Actions", value=actions_text, inline=True)
         
         # Exemptions
-        # Debug: Check what properties are available on the rule
-        log.debug(f"Available rule attributes: {[attr for attr in dir(rule) if 'exempt' in attr.lower()]}")
-        
         # Exempt Roles - Try both object and ID properties
         exempt_roles_data = getattr(rule, 'exempt_roles', None) or getattr(rule, 'exempt_role_ids', None)
-        log.debug(f"Exempt roles data: {exempt_roles_data}")
         if exempt_roles_data:
             role_names = []
             for role_data in exempt_roles_data:
-                # Debug logging
-                log.debug(f"Role data type: {type(role_data)}, value: {role_data}")
-                
                 # If it's already a Role object
                 if hasattr(role_data, 'id') and hasattr(role_data, 'name'):
                     role_names.append(f"<@&{role_data.id}> ({role_data.name})")
@@ -765,7 +759,6 @@ class InWhitelist(commands.Cog):
                         try:
                             role_id = int(role_id)
                         except ValueError:
-                            log.warning(f"Invalid role ID format: {role_id}")
                             role_names.append(f"@{role_id} (invalid)")
                             continue
                     
@@ -787,13 +780,9 @@ class InWhitelist(commands.Cog):
         
         # Exempt Channels - Try both object and ID properties
         exempt_channels_data = getattr(rule, 'exempt_channels', None) or getattr(rule, 'exempt_channel_ids', None)
-        log.debug(f"Exempt channels data: {exempt_channels_data}")
         if exempt_channels_data:
             channel_names = []
             for channel_data in exempt_channels_data:
-                # Debug logging
-                log.debug(f"Channel data type: {type(channel_data)}, value: {channel_data}")
-                
                 # If it's already a Channel object
                 if hasattr(channel_data, 'id') and hasattr(channel_data, 'name'):
                     channel_names.append(f"<#{channel_data.id}> ({channel_data.name})")
@@ -804,7 +793,6 @@ class InWhitelist(commands.Cog):
                         try:
                             channel_id = int(channel_id)
                         except ValueError:
-                            log.warning(f"Invalid channel ID format: {channel_id}")
                             channel_names.append(f"#{channel_id} (invalid)")
                             continue
                     
