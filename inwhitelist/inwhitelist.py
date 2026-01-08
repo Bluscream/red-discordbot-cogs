@@ -706,7 +706,7 @@ class InWhitelist(commands.Cog):
             invite_list = []
             for code in invite_codes:
                 cached_info = invite_cache.get(code)
-                template = "https://discord.gg/{code}: `{name}`"
+                template = "discord.gg/{code}: `{name}`"
                 if cached_info:
                     server_name = cached_info.get("server_name", "Unknown Server")
                     invite_list.append(template.format(code=code, name=server_name))
