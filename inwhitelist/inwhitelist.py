@@ -640,7 +640,7 @@ class InWhitelist(commands.Cog):
         # Add rule info
         embed.set_footer(text=f"{'✅' if rule.enabled else '❌'} {rule.id}")
         
-        await ctx.reply(embed=embed)
+        await ctx.reply(embed=embed, content=ctx.author.mention)
 
     @invite_whitelist.command(name="info")
     async def invite_info(self, ctx: commands.Context):
@@ -974,7 +974,7 @@ class InWhitelist(commands.Cog):
         
         embed.set_footer(text="Reply with 'CONFIRM PRUNE' to proceed or anything else to cancel")
         
-        await ctx.reply(embed=embed)
+        await ctx.reply(embed=embed, content=ctx.author.mention)
         
         # Wait for confirmation
         def check(message):
