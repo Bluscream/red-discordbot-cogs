@@ -812,7 +812,7 @@ class InWhitelist(commands.Cog):
         else:
             embed.add_field(name="0 Exempt Channels", value="None", inline=False)
         
-        await ctx.reply(embed=embed)
+        await ctx.reply(embed=embed, content=ctx.author.mention)
 
     @invite_whitelist.command(name="enable")
     async def invite_enable(self, ctx: commands.Context):
