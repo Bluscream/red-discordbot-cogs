@@ -743,15 +743,37 @@ class InWhitelist(commands.Cog):
         embed.add_field(name="Actions", value=actions_text, inline=True)
         
         # Exemptions
-        # Exempt Roles
-        if rule.exempt_roles:
+        # Debug: Check what properties are available on the rule
+        log.debug(f"Available rule attributes: {[attr for attr in dir(rule) if 'exempt' in attr.lower()]}")
+        
+        # Exempt Roles - Try both object and ID properties
+        exempt_roles_data = getattr(rule, 'exempt_roles', None) or getattr(rule, 'exempt_role_ids', None)
+        log.debug(f"Exempt roles data: {exempt_roles_data}")
+        if exempt_roles_data:
             role_names = []
-            for role_id in rule.exempt_roles:
-                role = ctx.guild.get_role(role_id)
-                if role:
-                    role_names.append(f"@{role.name}")
+            for role_data in exempt_roles_data:
+                # Debug logging
+                log.debug(f"Role data type: {type(role_data)}, value: {role_data}")
+                
+                # If it's already a Role object
+                if hasattr(role_data, 'id') and hasattr(role_data, 'name'):
+                    role_names.append(f"<@&{role_data.id}> ({role_data.name})")
+                # If it's an ID (int or string)
                 else:
-                    role_names.append(f"<@&{role_id}> (deleted)")
+                    role_id = role_data
+                    if isinstance(role_id, str):
+                        try:
+                            role_id = int(role_id)
+                        except ValueError:
+                            log.warning(f"Invalid role ID format: {role_id}")
+                            role_names.append(f"@{role_id} (invalid)")
+                            continue
+                    
+                    role = ctx.guild.get_role(role_id)
+                    if role:
+                        role_names.append(f"<@&{role_id}> ({role.name})")
+                    else:
+                        role_names.append(f"<@&{role_id}> (deleted)")
             
             # Limit display to prevent embed overflow
             if len(role_names) > 10:
@@ -759,19 +781,38 @@ class InWhitelist(commands.Cog):
             else:
                 roles_text = "\n".join(role_names)
             
-            embed.add_field(name=f"{len(rule.exempt_roles)} Exempt Roles", value=roles_text, inline=False)
+            embed.add_field(name=f"{len(exempt_roles_data)} Exempt Roles", value=roles_text, inline=False)
         else:
             embed.add_field(name="0 Exempt Roles", value="None", inline=False)
         
-        # Exempt Channels
-        if rule.exempt_channels:
+        # Exempt Channels - Try both object and ID properties
+        exempt_channels_data = getattr(rule, 'exempt_channels', None) or getattr(rule, 'exempt_channel_ids', None)
+        log.debug(f"Exempt channels data: {exempt_channels_data}")
+        if exempt_channels_data:
             channel_names = []
-            for channel_id in rule.exempt_channels:
-                channel = ctx.guild.get_channel(channel_id)
-                if channel:
-                    channel_names.append(f"#{channel.name}")
+            for channel_data in exempt_channels_data:
+                # Debug logging
+                log.debug(f"Channel data type: {type(channel_data)}, value: {channel_data}")
+                
+                # If it's already a Channel object
+                if hasattr(channel_data, 'id') and hasattr(channel_data, 'name'):
+                    channel_names.append(f"<#{channel_data.id}> ({channel_data.name})")
+                # If it's an ID (int or string)
                 else:
-                    channel_names.append(f"<#{channel_id}> (deleted)")
+                    channel_id = channel_data
+                    if isinstance(channel_id, str):
+                        try:
+                            channel_id = int(channel_id)
+                        except ValueError:
+                            log.warning(f"Invalid channel ID format: {channel_id}")
+                            channel_names.append(f"#{channel_id} (invalid)")
+                            continue
+                    
+                    channel = ctx.guild.get_channel(channel_id)
+                    if channel:
+                        channel_names.append(f"<#{channel_id}> ({channel.name})")
+                    else:
+                        channel_names.append(f"<#{channel_id}> (deleted)")
             
             # Limit display to prevent embed overflow
             if len(channel_names) > 10:
@@ -779,7 +820,7 @@ class InWhitelist(commands.Cog):
             else:
                 channels_text = "\n".join(channel_names)
             
-            embed.add_field(name=f"{len(rule.exempt_channels)} Exempt Channels", value=channels_text, inline=False)
+            embed.add_field(name=f"{len(exempt_channels_data)} Exempt Channels", value=channels_text, inline=False)
         else:
             embed.add_field(name="0 Exempt Channels", value="None", inline=False)
         
