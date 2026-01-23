@@ -183,6 +183,52 @@ class Bluscream(commands.Cog):
             referenced_message = await ctx.channel.fetch_message(ctx.message.reference.message_id)
             target_user = referenced_message.author
             
+            # Collect user information before banning
+            user_info = {
+                "username": str(target_user),
+                "userid": target_user.id,
+                "created_at": target_user.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                "joined_at": None,
+                "message_count": 0
+            }
+            
+            # Get join date if user is still in server
+            try:
+                member = ctx.guild.get_member(target_user.id)
+                if member and member.joined_at:
+                    user_info["joined_at"] = member.joined_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+            except:
+                pass
+            
+            # Count total messages from user using search API
+            try:
+                # Use the search API endpoint directly
+                search_url = f"/guilds/{ctx.guild.id}/messages/search"
+                search_params = {
+                    "author_id": target_user.id,
+                    "limit": 100  # Get count from search results
+                }
+                
+                search_result = await ctx.bot.http.request(
+                    discord.http.Route('GET', search_url, guild_id=ctx.guild.id),
+                    params=search_params
+                )
+                
+                if search_result and "total_results" in search_result:
+                    user_info["message_count"] = search_result["total_results"]
+                else:
+                    user_info["message_count"] = "Search unavailable"
+            except Exception as e:
+                # Fallback to manual iteration if search fails
+                try:
+                    message_count = 0
+                    async for message in ctx.channel.history(limit=1000):
+                        if message.author.id == target_user.id:
+                            message_count += 1
+                    user_info["message_count"] = f"{message_count} (manual count)"
+                except:
+                    user_info["message_count"] = "Unable to count"
+            
             # Generate message link for default reason
             if not reason:
                 message_link = f"https://discord.com/channels/{ctx.guild.id}/{ctx.channel.id}/{referenced_message.id}"
@@ -193,6 +239,28 @@ class Bluscream(commands.Cog):
             
             # Ban the user and purge last 7 days
             await ctx.guild.ban(target_user, reason=reason, delete_message_days=7)
+            
+            # Send summary to specified channel if in specific server
+            if ctx.guild.id == 747967102895390741:
+                try:
+                    summary_channel = ctx.guild.get_channel(896433099100016750)
+                    if summary_channel:
+                        summary_embed = discord.Embed(
+                            title="Scam Ban Summary",
+                            color=discord.Color.red(),
+                            timestamp=discord.utils.utcnow()
+                        )
+                        summary_embed.add_field(name="Username", value=user_info["username"], inline=True)
+                        summary_embed.add_field(name="User ID", value=str(user_info["userid"]), inline=True)
+                        summary_embed.add_field(name="Account Created", value=user_info["created_at"], inline=False)
+                        summary_embed.add_field(name="Join Date", value=user_info["joined_at"] or "Not available", inline=False)
+                        summary_embed.add_field(name="Message Count (Last 1000)", value=str(user_info["message_count"]), inline=False)
+                        summary_embed.add_field(name="Reason", value=reason, inline=False)
+                        summary_embed.set_footer(text=f"Banned by {ctx.author}")
+                        
+                        await summary_channel.send(embed=summary_embed)
+                except Exception as e:
+                    log.warning(f"Failed to send scam summary to channel: {e}")
             
             # Wait 1 second then unban
             await asyncio.sleep(1)
