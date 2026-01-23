@@ -8,6 +8,7 @@ import discord
 from redbot.core import Config, checks, commands
 from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import error, info, success, warning, box
+import asyncio
 
 log = getLogger("red.blu.bluscream")
 
@@ -162,6 +163,50 @@ class Bluscream(commands.Cog):
                 box(csv_content, lang="csv"),
                 content=success(f"Generated command dump with {len(unique_commands)} commands:")
             )
+
+    @commands.command(name="scam")
+    @commands.has_permissions(ban_members=True)
+    @commands.bot_has_permissions(ban_members=True, read_message_history=True)
+    async def scam(self, ctx: commands.Context, *, reason: str = None):
+        """
+        Ban the user from the replied message, purge last 7 days, then unban after 1 second.
+        
+        Args:
+            reason: Optional reason for the ban. If not provided, uses "Scam: <message link>"
+        """
+        if not ctx.message.reference:
+            await ctx.send(error("You must reply to a message to use this command."))
+            return
+        
+        try:
+            # Get the referenced message
+            referenced_message = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+            target_user = referenced_message.author
+            
+            # Generate message link for default reason
+            if not reason:
+                message_link = f"https://discord.com/channels/{ctx.guild.id}/{ctx.channel.id}/{referenced_message.id}"
+                reason = f"Scam: {message_link}"
+            
+            # Add check mark reaction to command message
+            await ctx.message.add_reaction("✅")
+            
+            # Ban the user and purge last 7 days
+            await ctx.guild.ban(target_user, reason=reason, delete_message_days=7)
+            
+            # Wait 1 second then unban
+            await asyncio.sleep(1)
+            await ctx.guild.unban(target_user, reason="Temporary scam ban completed")
+            
+            await ctx.send(success(f"Successfully processed scam action for {target_user.mention}"))
+            
+        except discord.NotFound:
+            await ctx.send(error("The referenced message could not be found."))
+        except discord.Forbidden:
+            await ctx.send(error("I don't have permission to ban/unban members or read message history."))
+        except Exception as e:
+            log.error(f"Error in scam command: {e}")
+            await ctx.send(error(f"An error occurred: {str(e)}"))
 
     # Error handling
     async def cog_command_error(self, ctx: commands.Context, error: Exception):
