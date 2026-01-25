@@ -3,6 +3,7 @@
 from typing import ClassVar, Dict, List, Optional, Union
 from logging import getLogger
 import io
+from datetime import datetime
 
 import discord
 from redbot.core import Config, checks, commands
@@ -201,7 +202,7 @@ class Bluscream(commands.Cog):
             user_info = {
                 "username": str(target_user),
                 "userid": target_user.id,
-                "created_at": target_user.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                "created_at": int(target_user.created_at.timestamp()),  # Unix timestamp for Discord format
                 "joined_at": None,
                 "message_count": 0
             }
@@ -210,7 +211,7 @@ class Bluscream(commands.Cog):
             try:
                 member = ctx.guild.get_member(target_user.id)
                 if member and member.joined_at:
-                    user_info["joined_at"] = member.joined_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+                    user_info["joined_at"] = int(member.joined_at.timestamp())  # Unix timestamp for Discord format
             except:
                 pass
             
@@ -260,17 +261,19 @@ class Bluscream(commands.Cog):
                     summary_channel = ctx.guild.get_channel(896433099100016750)
                     if summary_channel:
                         summary_embed = discord.Embed(
-                            title="Scam Ban Summary",
+                            title="",
                             color=discord.Color.red(),
                             timestamp=discord.utils.utcnow()
                         )
-                        summary_embed.add_field(name="Username", value=user_info["username"], inline=True)
-                        summary_embed.add_field(name="User ID", value=str(user_info["userid"]), inline=True)
-                        summary_embed.add_field(name="Account Created", value=user_info["created_at"], inline=False)
-                        summary_embed.add_field(name="Join Date", value=user_info["joined_at"] or "Not available", inline=False)
-                        summary_embed.add_field(name="Message Count (Last 1000)", value=str(user_info["message_count"]), inline=False)
+                        uid = user_info["userid"]
+                        summary_embed.add_field(name="User", value=target_user.mention, inline=True)
+                        summary_embed.add_field(name="User ID", value=uid, inline=True)
+                        summary_embed.add_field(name="Account Created", value=f"<t:{user_info['created_at']}:R>" if user_info["created_at"] else "Not available", inline=False)
+                        summary_embed.add_field(name="Join Date", value=f"<t:{user_info['joined_at']}:R>" if user_info["joined_at"] else "Not available", inline=False)
+                        summary_embed.add_field(name="Message Count", value=str(user_info["message_count"]), inline=False)
                         summary_embed.add_field(name="Reason", value=reason, inline=False)
-                        summary_embed.set_footer(text=f"Banned by {ctx.author}")
+                        summary_embed.add_field(name="Moderator", value=ctx.author.mention, inline=False)
+                        summary_embed.set_footer(text=f"{datetime.now()}")
                         
                         await summary_channel.send(embed=summary_embed)
                 except Exception as e:
