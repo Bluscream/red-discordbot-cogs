@@ -53,6 +53,15 @@ class Bluscream(commands.Cog):
             f"in {guild_name} (ID: {guild_id})"
         )
 
+    def _build_message_link(self, guild_id: int, channel_id: int, message_id: int, domain: str = "") -> str:
+        """Build a Discord message link from guild, channel, and message IDs."""
+        domain = domain or "discord.com"
+        return f"https://{domain}/channels/{guild_id}/{channel_id}/{message_id}"
+    
+    def _build_message_link_from_msg(self, message: discord.Message, domain: str) -> str:
+        """Build a Discord message link from a message object."""
+        return self._build_message_link(message.guild.id, message.channel.id, message.id, domain)
+
     def _format_command_signature(self, command: commands.Command) -> str:
         """Format a command signature with its parameters."""
         if not command.parent:  # Root command
@@ -246,16 +255,13 @@ class Bluscream(commands.Cog):
             
             # Generate message link for default reason
             if not reason:
-                message_link = f"https://discord.com/channels/{ctx.guild.id}/{ctx.channel.id}/{referenced_message.id}"
-                reason = f"Scam: {message_link}"
-            
-            # Add check mark reaction to command message
-            await ctx.message.add_reaction("✅")
+                reason = f"Scam: {self._build_message_link_from_msg(referenced_message)}"
             
             # Ban the user and purge last 7 days
             await ctx.guild.ban(target_user, reason=reason, delete_message_seconds=60*60*24*7)
             
             # Send summary to specified channel if in specific server
+            summary_message = None
             if ctx.guild.id == 747967102895390741:
                 try:
                     summary_channel = ctx.guild.get_channel(896433099100016750)
@@ -275,23 +281,33 @@ class Bluscream(commands.Cog):
                         summary_embed.add_field(name="Moderator", value=ctx.author.mention, inline=False)
                         summary_embed.set_footer(text=f"{datetime.now()}")
                         
-                        await summary_channel.send(embed=summary_embed)
+                        summary_message = await summary_channel.send(embed=summary_embed)
                 except Exception as e:
                     log.warning(f"Failed to send scam summary to channel: {e}")
             
             # Wait 1 second then unban
             await asyncio.sleep(1)
-            await ctx.guild.unban(target_user, reason="Temporary scam ban completed")
             
-            await ctx.send(success(f"Successfully processed scam action for {target_user.mention}"))
+            # Use summary message link as unban reason if available, otherwise default reason
+            unban_reason = "Temporary scam ban completed"
+            if summary_message:
+                unban_reason = self._build_message_link_from_msg(summary_message)
+            
+            await ctx.guild.unban(target_user, reason=unban_reason)
+            
+            # Add check mark reaction to command message
+            await ctx.message.add_reaction("✅")
             
         except discord.NotFound:
             await ctx.send(error("The referenced message could not be found."))
+            await ctx.message.add_reaction("❓")
         except discord.Forbidden:
             await ctx.send(error("I don't have permission to ban/unban members or read message history."))
+            await ctx.message.add_reaction("🚫")
         except Exception as e:
             log.error(f"Error in scam command: {e}")
-            await ctx.send(error(f"An error occurred: {str(e)}"))
+            await ctx.message.add_reaction("❌")
+            # await ctx.send(error(f"An error occurred: {str(e)}"))
 
     # Error handling
     async def cog_command_error(self, ctx: commands.Context, error: Exception):
