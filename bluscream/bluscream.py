@@ -58,7 +58,7 @@ class Bluscream(commands.Cog):
         domain = domain or "discord.com"
         return f"https://{domain}/channels/{guild_id}/{channel_id}/{message_id}"
     
-    def _build_message_link_from_msg(self, message: discord.Message, domain: str) -> str:
+    def _build_message_link_from_msg(self, message: discord.Message, domain: str = "") -> str:
         """Build a Discord message link from a message object."""
         return self._build_message_link(message.guild.id, message.channel.id, message.id, domain)
 
@@ -289,7 +289,7 @@ class Bluscream(commands.Cog):
             await asyncio.sleep(1)
             
             # Use summary message link as unban reason if available, otherwise default reason
-            unban_reason = "Temporary scam ban completed"
+            unban_reason = "Temporary scam ban"
             if summary_message:
                 unban_reason = self._build_message_link_from_msg(summary_message)
             
