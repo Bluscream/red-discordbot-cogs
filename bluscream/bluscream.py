@@ -38,6 +38,20 @@ class Bluscream(commands.Cog):
         """Called when the cog is loaded."""
         log.info("Bluscream cog loaded successfully")
 
+    @commands.Cog.listener()
+    async def on_command(self, ctx: commands.Context):
+        """Log all command executions."""
+        guild_name = ctx.guild.name if ctx.guild else "DM"
+        guild_id = ctx.guild.id if ctx.guild else "DM"
+        channel_name = ctx.channel.name if hasattr(ctx.channel, 'name') else f"DM-{ctx.channel.id}"
+        
+        log.info(
+            f"Command executed: {ctx.command} "
+            f"by {ctx.author} (ID: {ctx.author.id}) "
+            f"in #{channel_name} (ID: {ctx.channel.id}) "
+            f"in {guild_name} (ID: {guild_id})"
+        )
+
     def _format_command_signature(self, command: commands.Command) -> str:
         """Format a command signature with its parameters."""
         if not command.parent:  # Root command
@@ -238,7 +252,7 @@ class Bluscream(commands.Cog):
             await ctx.message.add_reaction("✅")
             
             # Ban the user and purge last 7 days
-            await ctx.guild.ban(target_user, reason=reason, delete_message_days=7)
+            await ctx.guild.ban(target_user, reason=reason, delete_message_seconds=60*60*24*7)
             
             # Send summary to specified channel if in specific server
             if ctx.guild.id == 747967102895390741:
@@ -285,6 +299,14 @@ class Bluscream(commands.Cog):
             await ctx.send(error("I don't have the required permissions to perform this action."))
         elif isinstance(error, commands.CheckFailure):
             await ctx.send(error("Command check failed."))
+        elif isinstance(error, commands.CommandInvokeError):
+            # Handle the wrapped exception
+            original_error = error.original
+            if isinstance(original_error, commands.BotMissingPermissions):
+                await ctx.send(error("I don't have the required permissions to perform this action."))
+            else:
+                log.error(f"Unexpected error in {ctx.command}: {original_error}")
+                await ctx.send(error("An unexpected error occurred. Please try again later."))
         else:
             log.error(f"Unexpected error in {ctx.command}: {error}")
             await ctx.send(error("An unexpected error occurred. Please try again later."))
