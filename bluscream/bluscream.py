@@ -206,111 +206,109 @@ class Bluscream(commands.Cog):
             # Get the referenced message
             referenced_message = await ctx.channel.fetch_message(ctx.message.reference.message_id)
             target_user = referenced_message.author
-            await ctx.message.add_reaction("⏳")
             
-            # Collect user information before banning
-            user_info = {
-                "username": str(target_user),
-                "userid": target_user.id,
-                "created_at": int(target_user.created_at.timestamp()),  # Unix timestamp for Discord format
-                "joined_at": None,
-                "message_count": 0
-            }
-            
-            # Get join date if user is still in server
-            try:
-                member = ctx.guild.get_member(target_user.id)
-                if member and member.joined_at:
-                    user_info["joined_at"] = int(member.joined_at.timestamp())  # Unix timestamp for Discord format
-            except:
-                pass
-            
-            # Count total messages from user using search API
-            try:
-                # Use the search API endpoint directly
-                search_url = f"/guilds/{ctx.guild.id}/messages/search"
-                search_params = {
-                    "author_id": target_user.id,
-                    "limit": 100  # Get count from search results
+            async with ctx.typing():
+                # Collect user information before banning
+                user_info = {
+                    "username": str(target_user),
+                    "userid": target_user.id,
+                    "created_at": int(target_user.created_at.timestamp()),  # Unix timestamp for Discord format
+                    "joined_at": None,
+                    "message_count": 0
                 }
                 
-                search_result = await ctx.bot.http.request(
-                    discord.http.Route('GET', search_url, guild_id=ctx.guild.id),
-                    params=search_params
-                )
-                
-                if search_result and "total_results" in search_result:
-                    user_info["message_count"] = search_result["total_results"]
-                else:
-                    user_info["message_count"] = "Search unavailable"
-            except Exception as e:
-                # Fallback to manual iteration if search fails
+                # Get join date if user is still in server
                 try:
-                    message_count = 0
-                    async for message in ctx.channel.history(limit=1000):
-                        if message.author.id == target_user.id:
-                            message_count += 1
-                    user_info["message_count"] = f"{message_count} (manual count)"
+                    member = ctx.guild.get_member(target_user.id)
+                    if member and member.joined_at:
+                        user_info["joined_at"] = int(member.joined_at.timestamp())  # Unix timestamp for Discord format
                 except:
-                    user_info["message_count"] = "Unable to count"
-            
-            # Generate message link for default reason
-            if not reason:
-                reason = f"Scam: {self._build_message_link_from_msg(referenced_message)}"
-            
-            # Ban the user and purge last 7 days
-            await ctx.guild.ban(target_user, reason=reason, delete_message_seconds=60*60*24*7)
-            
-            # Send summary to specified channel if in specific server
-            summary_message = None
-            if ctx.guild.id == 747967102895390741:
+                    pass
+                
+                # Count total messages from user using search API
                 try:
-                    summary_channel = ctx.guild.get_channel(896433099100016750)
-                    if summary_channel:
-                        summary_embed = discord.Embed(
-                            title="",
-                            color=discord.Color.red(),
-                            timestamp=discord.utils.utcnow()
-                        )
-                        uid = user_info["userid"]
-                        summary_embed.add_field(name="User", value=target_user.mention, inline=True)
-                        summary_embed.add_field(name="User ID", value=uid, inline=True)
-                        summary_embed.add_field(name="Account Created", value=f"<t:{user_info['created_at']}:R>" if user_info["created_at"] else "Not available", inline=False)
-                        summary_embed.add_field(name="Join Date", value=f"<t:{user_info['joined_at']}:R>" if user_info["joined_at"] else "Not available", inline=False)
-                        summary_embed.add_field(name="Message Count", value=str(user_info["message_count"]), inline=False)
-                        summary_embed.add_field(name="Reason", value=reason, inline=False)
-                        summary_embed.add_field(name="Moderator", value=ctx.author.mention, inline=False)
-                        summary_embed.set_footer(text=f"{datetime.now()}")
-                        
-                        summary_message = await summary_channel.send(embed=summary_embed)
+                    # Use the search API endpoint directly
+                    search_url = f"/guilds/{ctx.guild.id}/messages/search"
+                    search_params = {
+                        "author_id": target_user.id,
+                        "limit": 100  # Get count from search results
+                    }
+                    
+                    search_result = await ctx.bot.http.request(
+                        discord.http.Route('GET', search_url, guild_id=ctx.guild.id),
+                        params=search_params
+                    )
+                    
+                    if search_result and "total_results" in search_result:
+                        user_info["message_count"] = search_result["total_results"]
+                    else:
+                        user_info["message_count"] = "Search unavailable"
                 except Exception as e:
-                    log.warning(f"Failed to send scam summary to channel: {e}")
-            
-            # Wait 1 second then unban
-            await asyncio.sleep(1)
-            
-            # Use summary message link as unban reason if available, otherwise default reason
-            unban_reason = "Temporary scam ban"
-            if summary_message:
-                unban_reason = self._build_message_link_from_msg(summary_message)
-            
-            await ctx.guild.unban(target_user, reason=unban_reason)
+                    # Fallback to manual iteration if search fails
+                    try:
+                        message_count = 0
+                        async for message in ctx.channel.history(limit=1000):
+                            if message.author.id == target_user.id:
+                                message_count += 1
+                        user_info["message_count"] = f"{message_count} (manual count)"
+                    except:
+                        user_info["message_count"] = "Unable to count"
+                
+                # Generate message link for default reason
+                if not reason:
+                    reason = f"Scam: {self._build_message_link_from_msg(referenced_message)}"
+                
+                # Ban the user and purge last 7 days
+                await ctx.guild.ban(target_user, reason=reason, delete_message_seconds=60*60*24*7)
+                
+                # Send summary to specified channel if in specific server
+                summary_message = None
+                if ctx.guild.id == 747967102895390741:
+                    try:
+                        summary_channel = ctx.guild.get_channel(896433099100016750)
+                        if summary_channel:
+                            summary_embed = discord.Embed(
+                                title="",
+                                color=discord.Color.red(),
+                                timestamp=discord.utils.utcnow()
+                            )
+                            uid = user_info["userid"]
+                            summary_embed.add_field(name="User", value=target_user.mention, inline=True)
+                            summary_embed.add_field(name="User ID", value=uid, inline=True)
+                            summary_embed.add_field(name="Account Created", value=f"<t:{user_info['created_at']}:R>" if user_info["created_at"] else "Not available", inline=False)
+                            summary_embed.add_field(name="Join Date", value=f"<t:{user_info['joined_at']}:R>" if user_info["joined_at"] else "Not available", inline=False)
+                            summary_embed.add_field(name="Message Count", value=str(user_info["message_count"]), inline=False)
+                            summary_embed.add_field(name="Reason", value=reason, inline=False)
+                            summary_embed.add_field(name="Moderator", value=ctx.author.mention, inline=False)
+                            summary_embed.set_footer(text=f"{datetime.now()}")
+                            
+                            summary_message = await summary_channel.send(embed=summary_embed)
+                    except Exception as e:
+                        log.warning(f"Failed to send scam summary to channel: {e}")
+                
+                # Wait 1 second then unban
+                await asyncio.sleep(1)
+                
+                # Use summary message link as unban reason if available, otherwise default reason
+                unban_reason = "Temporary scam ban"
+                if summary_message:
+                    unban_reason = self._build_message_link_from_msg(summary_message)
+                
+                await ctx.guild.unban(target_user, reason=unban_reason)
             
             # Add check mark reaction to command message
-            await ctx.message.remove_reaction("⏳")
             await ctx.message.add_reaction("✅")
             
-        except discord.NotFound:
-            await ctx.send(error("The referenced message could not be found."))
-            await ctx.message.remove_reaction("⏳")
+        except discord.NotFound as e:
+            log.error(e)
             await ctx.message.add_reaction("❓")
-        except discord.Forbidden:
-            await ctx.send(error("I don't have permission to ban/unban members or read message history."))
-            await ctx.message.remove_reaction("⏳")
+            # await ctx.send(error("The referenced message could not be found."))
+        except discord.Forbidden as e:
+            log.error(e)
             await ctx.message.add_reaction("🚫")
+            # await ctx.send(error("I don't have permission to ban/unban members or read message history."))
         except Exception as e:
-            log.error(f"Error in scam command: {e}")
-            await ctx.message.remove_reaction("⏳")
+            log.error(e)
             await ctx.message.add_reaction("❌")
             # await ctx.send(error(f"An error occurred: {str(e)}"))
 
