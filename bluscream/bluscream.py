@@ -206,6 +206,7 @@ class Bluscream(commands.Cog):
             # Get the referenced message
             referenced_message = await ctx.channel.fetch_message(ctx.message.reference.message_id)
             target_user = referenced_message.author
+            await ctx.message.add_reaction("⏳")
             
             # Collect user information before banning
             user_info = {
@@ -296,16 +297,20 @@ class Bluscream(commands.Cog):
             await ctx.guild.unban(target_user, reason=unban_reason)
             
             # Add check mark reaction to command message
+            await ctx.message.remove_reaction("⏳")
             await ctx.message.add_reaction("✅")
             
         except discord.NotFound:
             await ctx.send(error("The referenced message could not be found."))
+            await ctx.message.remove_reaction("⏳")
             await ctx.message.add_reaction("❓")
         except discord.Forbidden:
             await ctx.send(error("I don't have permission to ban/unban members or read message history."))
+            await ctx.message.remove_reaction("⏳")
             await ctx.message.add_reaction("🚫")
         except Exception as e:
             log.error(f"Error in scam command: {e}")
+            await ctx.message.remove_reaction("⏳")
             await ctx.message.add_reaction("❌")
             # await ctx.send(error(f"An error occurred: {str(e)}"))
 
