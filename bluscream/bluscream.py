@@ -274,7 +274,7 @@ class Bluscream(commands.Cog):
                             )
                             uid = user_info["userid"]
                             summary_embed.add_field(name="User", value=target_user.mention, inline=True)
-                            summary_embed.add_field(name="User ID", value=uid, inline=True)
+                            summary_embed.add_field(name="User ID", value=f"`{uid}`", inline=True)
                             summary_embed.add_field(name="Account Created", value=f"<t:{user_info['created_at']}:R>" if user_info["created_at"] else "Not available", inline=False)
                             summary_embed.add_field(name="Join Date", value=f"<t:{user_info['joined_at']}:R>" if user_info["joined_at"] else "Not available", inline=False)
                             summary_embed.add_field(name="Message Count", value=str(user_info["message_count"]), inline=False)
