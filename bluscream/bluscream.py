@@ -321,14 +321,16 @@ class Bluscream(commands.Cog):
 
     @role.command(name="add")
     @commands.bot_has_permissions(manage_roles=True)
-    async def role_add(self, ctx: commands.Context, name: str, color: discord.Color = discord.Color.default()):
+    async def role_add(self, ctx: commands.Context, name: str, color: Optional[discord.Color] = None):
         """
         Add a role with no permissions on the bottom of the role list.
         
         Args:
             name: The name of the new role.
-            color: The color of the new role (hex code or name).
+            color: The color of the new role (hex code or name). If omitted, uses a random color.
         """
+        if color is None:
+            color = discord.Color.random()
         try:
             # Create the role with no permissions
             new_role = await ctx.guild.create_role(
