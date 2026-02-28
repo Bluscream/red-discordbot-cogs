@@ -15,7 +15,7 @@ from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import error, info, success, warning, box
 
 from .pcx_lib import *
-from .activision_api import ActivisionStatus
+from .activision import ActivisionAPI
 from .regex_utils import RegexParser
 
 log = getLogger("red.blu.activisionstatus")
@@ -80,7 +80,7 @@ class ActivisionStatusCog(commands.Cog):
         
         # Initialize status API with cache
         cache_age = await self.config.cache_age()
-        self.status_api = ActivisionStatus(
+        self.status_api = ActivisionAPI(
             session=self._session,
             cache_file=self.cache_file,
             cache_age=cache_age
@@ -824,7 +824,7 @@ class ActivisionStatusCog(commands.Cog):
 
         await self.config.cache_age.set(seconds)
         # Update the status API cache age
-        self.status_api.cache_age = seconds
+        self.status_api.status_api.cache_age = seconds
         await reply(ctx, success(f"Cache age set to {seconds} seconds ({seconds // 60} minutes)."))
 
     @activision_group.command(name="botstatus")
@@ -849,3 +849,87 @@ class ActivisionStatusCog(commands.Cog):
             data = await self.status_api.fetch_status()
             if data:
                 await self._update_bot_status(data)
+
+    @activision_group.command(name="bancheck", aliases=["checkban"])
+    async def ban_check(self, ctx: commands.Context, account_id: str) -> None:
+        """Check ban status for an Activision account.
+        
+        Args:
+            account_id: The Activision account ID to check
+        """
+        async with ctx.typing():
+            try:
+                ban_data = await self.status_api.check_ban_status(account_id)
+                
+                if not ban_data:
+                    await reply(ctx, error("Failed to check ban status. The service might be temporarily unavailable."))
+                    return
+                
+                # Create embed for ban status
+                embed = discord.Embed(
+                    title=f"Ban Status Check - {account_id}",
+                    color=discord.Color.orange(),
+                    timestamp=datetime.utcnow()
+                )
+                
+                # Parse the ban data response
+                if isinstance(ban_data, dict):
+                    # Check if there's ban information
+                    if ban_data.get("banned") is True:
+                        embed.color = discord.Color.red()
+                        embed.description = "🚫 **Account is BANNED**"
+                        
+                        # Add ban details if available
+                        ban_reason = ban_data.get("reason", "No reason provided")
+                        ban_date = ban_data.get("banDate", "Unknown")
+                        ban_duration = ban_data.get("duration", "Unknown")
+                        
+                        embed.add_field(name="Reason", value=ban_reason, inline=False)
+                        embed.add_field(name="Ban Date", value=ban_date, inline=True)
+                        embed.add_field(name="Duration", value=ban_duration, inline=True)
+                        
+                        # Add appeal information if available
+                        if ban_data.get("canAppeal"):
+                            embed.add_field(
+                                name="Appeal", 
+                                value="You can appeal this ban at: https://support.activision.com/ban-appeal",
+                                inline=False
+                            )
+                        else:
+                            embed.add_field(name="Appeal", value="This ban cannot be appealed.", inline=False)
+                            
+                    elif ban_data.get("banned") is False:
+                        embed.color = discord.Color.green()
+                        embed.description = "✅ **Account is NOT BANNED**"
+                        embed.add_field(name="Status", value="Account is in good standing", inline=False)
+                        
+                    else:
+                        # Ambiguous response, show what we got
+                        embed.color = discord.Color.yellow()
+                        embed.description = "⚠️ **Unable to determine ban status**"
+                        
+                        # Show available data
+                        if "message" in ban_data:
+                            embed.add_field(name="Message", value=ban_data["message"], inline=False)
+                        else:
+                            embed.add_field(
+                                name="Response", 
+                                value=f"```json\n{json.dumps(ban_data, indent=2)[:1000]}```",
+                                inline=False
+                            )
+                else:
+                    # Non-dict response, show as is
+                    embed.color = discord.Color.yellow()
+                    embed.description = "⚠️ **Unexpected response format**"
+                    embed.add_field(
+                        name="Response", 
+                        value=f"```json\n{json.dumps(ban_data, indent=2)[:1000]}```",
+                        inline=False
+                    )
+                
+                embed.set_footer(text="Ban status information from Activision Support")
+                await reply(ctx, embed=embed)
+                
+            except Exception as e:
+                log.error(f"Error in ban check command: {e}", exc_info=True)
+                await reply(ctx, error(f"An error occurred while checking ban status: {str(e)}"))

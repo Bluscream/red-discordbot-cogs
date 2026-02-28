@@ -312,6 +312,41 @@ class Bluscream(commands.Cog):
             await ctx.message.add_reaction("❌")
             # await ctx.send(error(f"An error occurred: {str(e)}"))
 
+    @commands.group(name="role")
+    @commands.guild_only()
+    @commands.has_permissions(manage_roles=True)
+    async def role(self, ctx: commands.Context):
+        """Role management commands."""
+        pass
+
+    @role.command(name="add")
+    @commands.bot_has_permissions(manage_roles=True)
+    async def role_add(self, ctx: commands.Context, name: str, color: discord.Color = discord.Color.default()):
+        """
+        Add a role with no permissions on the bottom of the role list.
+        
+        Args:
+            name: The name of the new role.
+            color: The color of the new role (hex code or name).
+        """
+        try:
+            # Create the role with no permissions
+            new_role = await ctx.guild.create_role(
+                name=name,
+                color=color,
+                permissions=discord.Permissions.none(),
+                reason=f"Created by {ctx.author} ({ctx.author.id}) via bluscream cog"
+            )
+            
+            # Move to bottom (position 1 is just above @everyone)
+            await new_role.edit(position=1)
+            
+            await ctx.send(success(f"Role **{name}** created and moved to the bottom of the list."))
+        except discord.Forbidden:
+            await ctx.send(error("I do not have permission to manage roles."))
+        except discord.HTTPException as e:
+            await ctx.send(error(f"Failed to create role: {e}"))
+
     # Error handling
     async def cog_command_error(self, ctx: commands.Context, error: Exception):
         """Handle command errors."""
