@@ -111,6 +111,16 @@ class Bluscream(commands.Cog):
         """Get the cog name for a command."""
         return command.cog_name or "No Cog"
 
+    async def _react_or_send(self, ctx: commands.Context, emoji: str, message: str):
+        """Try to react with an emoji, or send a message if reaction permissions are missing."""
+        if ctx.channel.permissions_for(ctx.me).add_reactions:
+            try:
+                await ctx.message.add_reaction(emoji)
+                return
+            except discord.HTTPException:
+                pass
+        await ctx.send(message)
+
     @commands.group(name="bluscream", aliases=["blu"], invoke_without_command=True)
     async def bluscream(self, ctx: commands.Context):
         """Bluscream utility commands."""
@@ -297,20 +307,17 @@ class Bluscream(commands.Cog):
                 await ctx.guild.unban(target_user, reason=unban_reason)
             
             # Add check mark reaction to command message
-            await ctx.message.add_reaction("✅")
+            await self._react_or_send(ctx, "✅", success("Scam ban completed successfully."))
             
         except discord.NotFound as e:
             log.error(e)
-            await ctx.message.add_reaction("❓")
-            # await ctx.send(error("The referenced message could not be found."))
+            await self._react_or_send(ctx, "❓", error("The referenced message could not be found."))
         except discord.Forbidden as e:
             log.error(e)
-            await ctx.message.add_reaction("🚫")
-            # await ctx.send(error("I don't have permission to ban/unban members or read message history."))
+            await self._react_or_send(ctx, "🚫", error("I don't have permission to perform this action."))
         except Exception as e:
             log.error(e)
-            await ctx.message.add_reaction("❌")
-            # await ctx.send(error(f"An error occurred: {str(e)}"))
+            await self._react_or_send(ctx, "❌", error(f"An error occurred: {str(e)}"))
 
     @commands.group(name="role")
     @commands.guild_only()
@@ -331,23 +338,25 @@ class Bluscream(commands.Cog):
         """
         if color is None:
             color = discord.Color.random()
-        try:
-            # Create the role with no permissions
-            new_role = await ctx.guild.create_role(
-                name=name,
-                color=color,
-                permissions=discord.Permissions.none(),
-                reason=f"Created by {ctx.author} ({ctx.author.id}) via bluscream cog"
-            )
-            
-            # Move to bottom (position 1 is just above @everyone)
-            await new_role.edit(position=1)
-            
-            await ctx.send(success(f"Role **{name}** created and moved to the bottom of the list."))
-        except discord.Forbidden:
-            await ctx.send(error("I do not have permission to manage roles."))
-        except discord.HTTPException as e:
-            await ctx.send(error(f"Failed to create role: {e}"))
+        
+        async with ctx.typing():
+            try:
+                # Create the role with no permissions
+                new_role = await ctx.guild.create_role(
+                    name=name,
+                    color=color,
+                    permissions=discord.Permissions.none(),
+                    reason=f"Created by {ctx.author} ({ctx.author.id}) via bluscream cog"
+                )
+                
+                # Move to bottom (position 1 is just above @everyone)
+                await new_role.edit(position=1)
+                
+                await self._react_or_send(ctx, "✅", success(f"Role **{name}** created and moved to the bottom of the list."))
+            except discord.Forbidden:
+                await self._react_or_send(ctx, "🚫", error("I do not have permission to manage roles."))
+            except discord.HTTPException as e:
+                await self._react_or_send(ctx, "❌", error(f"Failed to create role: {e}"))
 
     # Error handling
     async def cog_command_error(self, ctx: commands.Context, error: Exception):
