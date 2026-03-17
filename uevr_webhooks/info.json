@@ -1,0 +1,20 @@
+{
+    "name": "UEVR Webhooks",
+    "author": [
+        "Bluscream (bluscream_)"
+    ],
+    "short": "Monitors specific forums for UEVR Profiles and triggers external webhooks.",
+    "description": "Watches configured Discord channels for new messages containing archive attachments. When detected, dispatches notifications to Discord Webhooks, Home Assistant Webhooks, and GitHub Repository Dispatches.",
+    "install_msg": "UEVR Webhooks installed! Configure your webhooks using `[p]uevrwebhooks` commands.",
+    "tags": [
+        "uevr",
+        "webhook",
+        "automation"
+    ],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        11,
+        0
+    ]
+}
