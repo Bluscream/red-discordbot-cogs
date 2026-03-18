@@ -28,9 +28,12 @@ class DiscordWebhookTarget(BaseTarget):
                             try:
                                 data = await resp.json()
                                 retry_after = data.get('retry_after', float(resp.headers.get('Retry-After', 1.0)))
-                            except:
-                                retry_after = 1.0
-                            log.warning(f"[Targets] Discord rate limited (429). Retrying in {retry_after}s...")
+                                bucket = resp.headers.get('X-RateLimit-Bucket', 'unknown')
+                                log.warning(f"[Targets] Discord 429 (Rate Limit). Retry: {retry_after}s | Bucket: {bucket} | Msg: {data.get('message', 'No message')}")
+                            except Exception as e:
+                                retry_after = float(resp.headers.get('Retry-After', 1.0))
+                                log.warning(f"[Targets] Discord 429 (Rate Limit). Retry: {retry_after}s | Error parsing JSON: {e}")
+                            
                             await asyncio.sleep(retry_after + 1)
                             continue
                         elif resp.status >= 400:

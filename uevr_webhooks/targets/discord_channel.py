@@ -29,9 +29,15 @@ class DiscordChannelTarget(BaseTarget):
                     msg = await channel.send(embed=discord_embed)
                     if hasattr(channel, "is_news") and channel.is_news():
                         try:
-                            await msg.publish()
-                        except discord.HTTPException:
-                            pass # Not a news channel or lacks permissions
+                            # Use a short timeout to avoid blocking for an hour on 429
+                            await asyncio.wait_for(msg.publish(), timeout=15.0)
+                            log.debug(f"[Targets] Published message in #{channel.name}")
+                        except asyncio.TimeoutError:
+                            log.warning(f"[Targets] Publishing in #{channel.name} timed out (likely 429 rate limit). Skipping...")
+                        except discord.Forbidden:
+                            log.warning(f"[Targets] Missing 'Manage Messages' to publish in #{channel.name}")
+                        except discord.HTTPException as e:
+                            log.warning(f"[Targets] Failed to publish in #{channel.name}: {e}")
                 else:
                     log.warning(f"[Targets] Could not find channel ID {chan_id}.")
             except discord.Forbidden:
