@@ -14,6 +14,12 @@ from discord.ext import tasks
 
 from .sources import DiscordSource, UEVRDeluxeSource, UEVRProfilesSource
 from .models import UEVRArchive, UEVRProfile
+from .targets import (
+    DiscordChannelTarget, 
+    DiscordWebhookTarget, 
+    GenericWebhookTarget, 
+    GitHubTarget
+)
 
 log = getLogger("red.blu.uevr_webhooks")
 
@@ -48,6 +54,12 @@ class UEVRWebhooks(commands.Cog):
         
         self.deluxe_source = UEVRDeluxeSource()
         self.profiles_source = UEVRProfilesSource()
+        
+        # Initialize Dispatch Targets
+        self.target_discord_chan = DiscordChannelTarget(bot)
+        self.target_discord_web = DiscordWebhookTarget()
+        self.target_generic_web = GenericWebhookTarget()
+        self.target_github = GitHubTarget(token_provider=self.config.github_token)
         
         self.polling_task.start()
 
@@ -285,9 +297,10 @@ class UEVRWebhooks(commands.Cog):
             # 2. Trigger webhooks for every distinct profile discovered inside the archive
             for sub_profile in archive.profiles:
                 await asyncio.gather(
-                    self.trigger_discord(sub_profile),
-                    self.trigger_hass(sub_profile),
-                    self.trigger_github(sub_profile)
+                    self.target_discord_chan.send(sub_profile, self.session, await self.config.discord_channels()),
+                    self.target_discord_web.send(sub_profile, self.session, await self.config.discord_webhooks()),
+                    self.target_generic_web.send(sub_profile, self.session, await self.config.hass_webhooks()),
+                    self.target_github.send(sub_profile, self.session, await self.config.github_webhooks())
                 )
                 await asyncio.sleep(1)
                 
@@ -299,82 +312,5 @@ class UEVRWebhooks(commands.Cog):
             async with self.config.cached_profiles() as active_cache:
                 active_cache.update(newly_processed)
 
-    async def trigger_discord(self, profile: UEVRProfile):
-        hooks = await self.config.discord_webhooks()
-        post_channels = await self.config.discord_channels()
-        if not hooks and not post_channels: return
-
-        embed_payload = profile.to_discord_embed()
-        discord_embed = discord.Embed.from_dict(embed_payload)
-        
-        # 1. Post to Native Channels
-        for chan_id in post_channels:
-            try:
-                channel = self.bot.get_channel(chan_id)
-                if channel:
-                    await channel.send(embed=discord_embed)
-                else:
-                    log.warning(f"[UEVR Webhooks] Could not find configured posting channel ID {chan_id}.")
-            except discord.Forbidden:
-                log.warning(f"[UEVR Webhooks] Missing permissions to post in channel {chan_id}.")
-            except Exception as e:
-                log.error(f"[UEVR Webhooks] Error posting to channel {chan_id}: {e}")
-            
-        # 2. Post to Webhooks
-            
-        for webhook_url in hooks:
-            for _ in range(3):
-                try:
-                    # Basic aiohttp dispatch to Discord Webhook
-                    json_data = {"embeds": [embed_payload]}
-                    async with self.session.post(webhook_url, json=json_data) as resp:
-                        if resp.status == 429:
-                            try:
-                                data = await resp.json()
-                                retry_after = data.get('retry_after', float(resp.headers.get('Retry-After', 1.0)))
-                            except:
-                                retry_after = 1.0
-                            log.warning(f"[UEVR Webhooks] Discord rate limited (429). Retrying in {retry_after}s...")
-                            await asyncio.sleep(retry_after + 1)
-                            continue
-                        elif resp.status >= 400:
-                            log.warning(f"[UEVR Webhooks] Discord webhook returned error: {resp.status}")
-                        break
-                except Exception as e:
-                    log.error(f"[UEVR Webhooks] Failed to trigger Discord webhook: {e}")
-                    break
-
-    async def trigger_hass(self, profile: UEVRProfile):
-        hooks = await self.config.hass_webhooks()
-        if not hooks: return
-        
-        payload = profile.to_hass_payload()
-        
-        for webhook_url in hooks:
-            try:
-                async with self.session.post(webhook_url, json=payload) as resp:
-                    if resp.status >= 400:
-                        log.warning(f"[UEVR Webhooks] Home Assistant webhook returned error: {resp.status}")
-            except Exception as e:
-                log.error(f"[UEVR Webhooks] Failed to trigger Home Assistant webhook: {e}")
-
-    async def trigger_github(self, profile: UEVRProfile):
-        hooks = await self.config.github_webhooks()
-        token = await self.config.github_token()
-        if not hooks or not token: return
-        
-        headers = {
-            "Accept": "application/vnd.github.v3+json",
-            "Authorization": f"Bearer {token}"
-        }
-        
-        github_payload = profile.to_github_payload()
-
-        for webhook_url in hooks:
-            if not webhook_url: continue
-            try:
-                async with self.session.post(webhook_url, headers=headers, json=github_payload) as resp:
-                    if resp.status >= 400:
-                        log.warning(f"[UEVR Webhooks] GitHub webhook returned error: {resp.status}")
-            except Exception as e:
-                log.error(f"[UEVR Webhooks] Failed to trigger GitHub webhook: {e}")
+    # Target handling methods are now modularized into .targets folder.
+    # The old trigger_* methods are removed.
