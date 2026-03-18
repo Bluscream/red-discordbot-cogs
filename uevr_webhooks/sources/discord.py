@@ -25,13 +25,13 @@ class DiscordSource:
             unique_id = f"{message.id}_{att.id}"
             archives.append(UEVRArchive(
                 unique_id=unique_id,
-                source=DiscordSource.source_name,
-                game_name=game_name,
+                sourceName=DiscordSource.source_name,
+                gameName=game_name,
                 filename=att.filename,
-                author=str(message.author),
-                download_url=att.url,
-                message_url=msg_url,
-                content=message.content,
+                authorName=str(message.author),
+                sourceDownloadUrl=att.url,
+                sourceUrl=msg_url,
+                description=message.content,
                 timestamp=message.created_at.timestamp()
             ))
             

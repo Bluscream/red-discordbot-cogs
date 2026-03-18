@@ -60,13 +60,13 @@ class UEVRProfilesSource(ProfilesSource):
                             
                             archives.append(UEVRArchive(
                                 unique_id=unique_id,
-                                source=self.source_name,
-                                game_name=game_name,
+                                sourceName=self.source_name,
+                                gameName=game_name,
                                 filename=archive_file,
-                                author=author,
-                                download_url=download_url,
-                                message_url=msg_url,
-                                content=desc,
+                                authorName=author,
+                                sourceDownloadUrl=download_url,
+                                sourceUrl=msg_url,
+                                description=desc,
                                 timestamp=ts
                             ))
         except Exception as e:

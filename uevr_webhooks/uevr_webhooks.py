@@ -27,7 +27,8 @@ class UEVRWebhooks(commands.Cog):
 
     default_global_settings: ClassVar[dict[str, Union[int, dict, List[int], List[str]]]] = {
         "monitored_channels": [1062167556129030164, 1199859776352428062, 1203329945770659861],
-        "discord_webhooks": ["https://discord.com/api/webhooks/1483609828638064786/X4nSLVFPu9rq8nUjb_Q6C65QnC_AL85iH4CgEVyYeg-_ZDnv6ax0VdRQoYILtiio7At2"],
+        "discord_channels": [1483609737198047424],
+        "discord_webhooks": [],
         "hass_webhooks": ["https://hass.minopia.de/api/webhook/-c7d3VKBdgySzs6SIng5mMzCT"],
         "github_webhooks": [""],
         "github_token": "",
@@ -62,19 +63,14 @@ class UEVRWebhooks(commands.Cog):
         """Build a Discord message link from a message object."""
         return f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}"
 
-    @commands.group(name="uevrwebhooks", aliases=["uwh"])
-    async def uevrwebhooks(self, ctx: commands.Context):
-        """Manage UEVR Webhook configuration."""
-        pass
-
     import json
-    
-    @commands.group(name="uevrwebhooks", aliases=["uwh"])
-    async def uevrwebhooks(self, ctx: commands.Context):
-        """Manage UEVR Webhook configuration."""
-        pass
 
-    @uevrwebhooks.group(name="settings")
+    @commands.group(name="uevr", aliases=["uwh"], invoke_without_command=True)
+    async def uevr_base(self, ctx: commands.Context):
+        """Base command for UEVR bot functions."""
+        await ctx.send_help()
+
+    @uevr_base.group(name="settings")
     @commands.is_owner()
     async def uwh_settings(self, ctx: commands.Context):
         """Dynamic Key/Value store for UEVR Webhook configuration."""
@@ -181,6 +177,34 @@ class UEVRWebhooks(commands.Cog):
         except KeyError:
             await ctx.send(error(f"Key `{key}` not found."))
 
+
+    @uevr_base.command(name="clear")
+    @checks.admin_or_permissions(manage_messages=True)
+    async def clear_channels(self, ctx: commands.Context):
+        """Purge all bot messages in the configured discord_channels list."""
+        channels = await self.config.discord_channels()
+        if not channels:
+            return await ctx.send(warning("No discord_channels are currently configured for posting."))
+            
+        await ctx.send(info(f"Attempting to clear bot messages in {len(channels)} configured channel(s)..."))
+        
+        cleared_count = 0
+        for chan_id in channels:
+            channel = self.bot.get_channel(chan_id)
+            if not channel:
+                continue
+            
+            try:
+                # Purge messages authored by this bot
+                deleted = await channel.purge(limit=1000, check=lambda m: m.author == self.bot.user)
+                cleared_count += len(deleted)
+            except discord.Forbidden:
+                await ctx.send(error(f"I don't have permission to manage messages in <#{chan_id}>."))
+            except discord.HTTPException as e:
+                await ctx.send(error(f"Failed to clear <#{chan_id}>: {e}"))
+                
+        await ctx.send(success(f"Successfully cleared {cleared_count} bot message(s) from posting channels."))
+
     @tasks.loop(minutes=30)
     async def polling_task(self):
         """Poll external APIs for new profiles."""
@@ -241,9 +265,20 @@ class UEVRWebhooks(commands.Cog):
         if not new_archives:
             return
             
-        log.info(f"[UEVR Webhooks] Detected new profile archive in #{message.channel.name} by {message.author}. Triggering webhooks.")
+        cache = await self.config.cached_profiles()
+        
+        unique_archives = []
+        for arch in new_archives:
+            if str(arch.unique_id) not in cache:
+                unique_archives.append(arch)
+                
+        if not unique_archives:
+            return
+            
+        log.info(f"[UEVR Webhooks] Detected {len(unique_archives)} new profile archive(s) in #{message.channel.name} by {message.author}. Triggering webhooks.")
 
-        for archive in new_archives:
+        newly_processed = {}
+        for archive in unique_archives:
             # 1. Download and Inspect before triggering
             await archive.download_and_inspect(self.session)
             
@@ -255,12 +290,37 @@ class UEVRWebhooks(commands.Cog):
                     self.trigger_github(sub_profile)
                 )
                 await asyncio.sleep(1)
+                
+            # 3. Mark processed in cache mapping
+            newly_processed[archive.unique_id] = message.created_at.timestamp()
+
+        # Update persistent store
+        if newly_processed:
+            async with self.config.cached_profiles() as active_cache:
+                active_cache.update(newly_processed)
 
     async def trigger_discord(self, profile: UEVRProfile):
         hooks = await self.config.discord_webhooks()
-        if not hooks: return
+        post_channels = await self.config.discord_channels()
+        if not hooks and not post_channels: return
 
         embed_payload = profile.to_discord_embed()
+        discord_embed = discord.Embed.from_dict(embed_payload)
+        
+        # 1. Post to Native Channels
+        for chan_id in post_channels:
+            try:
+                channel = self.bot.get_channel(chan_id)
+                if channel:
+                    await channel.send(embed=discord_embed)
+                else:
+                    log.warning(f"[UEVR Webhooks] Could not find configured posting channel ID {chan_id}.")
+            except discord.Forbidden:
+                log.warning(f"[UEVR Webhooks] Missing permissions to post in channel {chan_id}.")
+            except Exception as e:
+                log.error(f"[UEVR Webhooks] Error posting to channel {chan_id}: {e}")
+            
+        # 2. Post to Webhooks
             
         for webhook_url in hooks:
             for _ in range(3):

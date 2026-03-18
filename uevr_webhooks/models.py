@@ -23,7 +23,7 @@ class UEVRProfile:
     
     def __init__(self, archive: 'UEVRArchive', title: str = None, internal_path: str = None):
         self.archive = archive
-        self.title = title or archive.game_name
+        self.title = title or archive.gameName
         self.internal_path = internal_path
         self.content = {}
         
@@ -31,38 +31,49 @@ class UEVRProfile:
         """Returns a dict ready to be passed to discord.Embed().to_dict()"""
         embed = discord.Embed(
             title=f"New UEVR Profile: {self.title}",
-            description=f"A new profile archive was uploaded by **{self.archive.author}**:\n`{self.archive.filename}`",
+            description=f"{self.archive.filename} was uploaded by **{self.archive.authorName}**`",
             color=discord.Color.green(),
             timestamp=datetime.utcfromtimestamp(self.archive.timestamp) if self.archive.timestamp else datetime.utcnow()
         )
         
-        if self.archive.message_url:
-            embed.description += f"\n\n[Jump to Source]({self.archive.message_url})"
+        if self.internal_path and self.internal_path != "[Root]":
+            embed.add_field(name="Path in archive", value=f"`{self.internal_path}`", inline=False)
             
-        if self.internal_path:
-            embed.add_field(name="Internal Path", value=f"`{self.internal_path}`", inline=False)
+        if self.archive.description:
+            embed.add_field(name="Description", value=self.archive.description[:1024], inline=False)
             
-        if self.archive.content:
-            embed.add_field(name="Notes", value=self.archive.content[:1024], inline=False)
-            
-        embed.add_field(name="Source", value=self.archive.source, inline=True)
+        if self.archive.sourceUrl:
+            embed.add_field(name="Source", value=f"[{self.archive.sourceName}]({self.archive.sourceUrl})", inline=True)
+        else:
+            embed.add_field(name="Source", value=self.archive.sourceName, inline=True)
         
-        if self.archive.zip_hash:
-            embed.add_field(name="Archive Hash", value=f"`{self.archive.zip_hash}`", inline=True)
+        if self.archive.zipHash:
+            embed.add_field(name="Archive MD5 Hash", value=f"`{self.archive.zipHash}`", inline=True)
             
-        if self.archive.download_url:
-            embed.add_field(name="Download", value=f"[Direct Link]({self.archive.download_url})", inline=True)
+        if self.archive.sourceDownloadUrl:
+            embed.add_field(name="Download", value=f"[Direct Link]({self.archive.sourceDownloadUrl})", inline=True)
             
         if self.content:
             file_list = []
             for path, info in self.content.items():
                 size_str = format_size(info.get('size', 0))
                 file_list.append(f"{path} ({size_str})")
-            files_str = "\n".join(file_list)
-            # Embed fields have a 1024 char limit. Account for code block ticks.
-            if len(files_str) > 1000:
-                files_str = files_str[:995] + "\n..."
-            embed.add_field(name="Profile Contents", value=f"```\n{files_str}\n```", inline=False)
+            
+            # Embed fields have a 1024 char limit. Account for code block ticks and more line.
+            files_str = ""
+            omitted = 0
+            for i, item in enumerate(file_list):
+                addition = item + "\n"
+                # reserve 35 chars for "```\n\n... X more\n```"
+                if len(files_str) + len(addition) > 980:
+                    omitted = len(file_list) - i
+                    break
+                files_str += addition
+                
+            if omitted > 0:
+                files_str += f"... {omitted} more"
+                
+            embed.add_field(name="Content", value=f"```\n{files_str.strip()}\n```", inline=False)
             
         return embed.to_dict()
         
@@ -70,15 +81,15 @@ class UEVRProfile:
         """Returns a dict payload for Home Assistant webhooks."""
         return {
             "event": "new_uevr_profile",
-            "source": self.archive.source,
-            "game": self.title,
-            "author": self.archive.author,
+            "sourceName": self.archive.sourceName,
+            "gameName": self.title,
+            "authorName": self.archive.authorName,
             "filename": self.archive.filename,
-            "download_url": self.archive.download_url,
-            "message_url": self.archive.message_url,
+            "sourceDownloadUrl": self.archive.sourceDownloadUrl,
+            "sourceUrl": self.archive.sourceUrl,
             "timestamp": self.archive.timestamp,
             "internal_path": self.internal_path,
-            "zip_hash": self.archive.zip_hash,
+            "zipHash": self.archive.zipHash,
             "content": self.content
         }
         
@@ -95,26 +106,26 @@ class UEVRArchive:
     
     def __init__(self, 
                  unique_id: str, 
-                 source: str, 
-                 game_name: str, 
+                 sourceName: str, 
+                 gameName: str, 
                  filename: str, 
-                 author: str, 
-                 download_url: str = None, 
-                 message_url: str = None, 
-                 content: str = None, 
+                 authorName: str, 
+                 sourceDownloadUrl: str = None, 
+                 sourceUrl: str = None, 
+                 description: str = None, 
                  timestamp: float = None):
                      
         self.unique_id = unique_id
-        self.source = source
-        self.game_name = game_name
+        self.sourceName = sourceName
+        self.gameName = gameName
         self.filename = filename
-        self.author = author
-        self.download_url = download_url
-        self.message_url = message_url
-        self.content = content
+        self.authorName = authorName
+        self.sourceDownloadUrl = sourceDownloadUrl
+        self.sourceUrl = sourceUrl
+        self.description = description
         self.timestamp = timestamp
         
-        self.zip_hash: Optional[str] = None
+        self.zipHash: Optional[str] = None
         self.profiles: List[UEVRProfile] = []
         
         # By default, add a root profile representing the archive itself.
@@ -129,7 +140,7 @@ class UEVRArchive:
         
     async def download_and_inspect(self, session: aiohttp.ClientSession):
         """Downloads the archive to a temp directory, hashes it, and inspects it for nested profiles."""
-        if not self.download_url:
+        if not self.sourceDownloadUrl:
             print(f"[Models] No download URL for {self.filename}, skipping inspection.")
             return
 
@@ -138,9 +149,9 @@ class UEVRArchive:
 
         try:
             # 1. Download the file
-            async with session.get(self.download_url) as resp:
+            async with session.get(self.sourceDownloadUrl) as resp:
                 if resp.status != 200:
-                    print(f"[Models] Failed to download {self.download_url}: HTTP {resp.status}")
+                    print(f"[Models] Failed to download {self.sourceDownloadUrl}: HTTP {resp.status}")
                     return
                 with open(temp_file, 'wb') as f:
                     while True:
@@ -154,7 +165,7 @@ class UEVRArchive:
             with open(temp_file, 'rb') as f:
                 for chunk in iter(lambda: f.read(4096), b""):
                     hasher.update(chunk)
-            self.zip_hash = hasher.hexdigest().upper()
+            self.zipHash = hasher.hexdigest().upper()
 
             # 3. Inspect contents (Only if .zip. For 7z/rar we currently fallback to single profile assumption unless external tools are added)
             if zipfile.is_zipfile(temp_file):
@@ -182,7 +193,7 @@ class UEVRArchive:
                         # Clear the default root profile
                         self.profiles = []
                         for internal_path in profile_roots:
-                            sub_title = f"{self.game_name} ({internal_path})" if internal_path != "[Root]" else self.game_name
+                            sub_title = f"{self.gameName} ({internal_path})" if internal_path != "[Root]" else self.gameName
                             profile = UEVRProfile(archive=self, title=sub_title, internal_path=internal_path)
                             
                             prefix = internal_path + "/" if internal_path != "[Root]" else ""
