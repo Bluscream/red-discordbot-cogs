@@ -26,7 +26,12 @@ class DiscordChannelTarget(BaseTarget):
             try:
                 channel = self.bot.get_channel(chan_id)
                 if channel:
-                    await channel.send(embed=discord_embed)
+                    msg = await channel.send(embed=discord_embed)
+                    if hasattr(channel, "is_news") and channel.is_news():
+                        try:
+                            await msg.publish()
+                        except discord.HTTPException:
+                            pass # Not a news channel or lacks permissions
                 else:
                     log.warning(f"[Targets] Could not find channel ID {chan_id}.")
             except discord.Forbidden:

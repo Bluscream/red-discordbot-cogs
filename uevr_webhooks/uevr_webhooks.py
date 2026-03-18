@@ -193,13 +193,29 @@ class UEVRWebhooks(commands.Cog):
     @uevr_base.command(name="clear")
     @checks.admin_or_permissions(manage_messages=True)
     async def clear_channels(self, ctx: commands.Context):
-        """Purge all bot messages in the configured discord_channels list."""
+        """Purge all bot and webhook messages in the configured discord_channels list."""
         channels = await self.config.discord_channels()
+        webhook_urls = await self.config.discord_webhooks()
+        
         if not channels:
             return await ctx.send(warning("No discord_channels are currently configured for posting."))
             
-        await ctx.send(info(f"Attempting to clear bot messages in {len(channels)} configured channel(s)..."))
+        import re
+        webhook_ids = set()
+        for url in webhook_urls:
+            match = re.search(r"webhooks/(\d+)/", url)
+            if match:
+                webhook_ids.add(int(match.group(1)))
+
+        await ctx.send(info(f"Attempting to clear bot and webhook messages in {len(channels)} configured channel(s)..."))
         
+        def purge_check(m: discord.Message):
+            if m.author == self.bot.user:
+                return True
+            if m.webhook_id and m.webhook_id in webhook_ids:
+                return True
+            return False
+
         cleared_count = 0
         for chan_id in channels:
             channel = self.bot.get_channel(chan_id)
@@ -207,15 +223,15 @@ class UEVRWebhooks(commands.Cog):
                 continue
             
             try:
-                # Purge messages authored by this bot
-                deleted = await channel.purge(limit=1000, check=lambda m: m.author == self.bot.user)
+                # Purge messages authored by this bot or our webhooks
+                deleted = await channel.purge(limit=1000, check=purge_check)
                 cleared_count += len(deleted)
             except discord.Forbidden:
                 await ctx.send(error(f"I don't have permission to manage messages in <#{chan_id}>."))
             except discord.HTTPException as e:
                 await ctx.send(error(f"Failed to clear <#{chan_id}>: {e}"))
                 
-        await ctx.send(success(f"Successfully cleared {cleared_count} bot message(s) from posting channels."))
+        await ctx.send(success(f"Successfully cleared {cleared_count} bot/webhook message(s) from posting channels."))
 
     @tasks.loop(minutes=30)
     async def polling_task(self):
