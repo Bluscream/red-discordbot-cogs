@@ -10,6 +10,10 @@ import discord
 from redbot.core import Config, checks, commands
 from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import error, info, success, warning, box
+from discord.ext import tasks
+
+from .sources import DiscordSource, UEVRDeluxeSource, UEVRProfilesSource
+from .models import UEVRArchive, UEVRProfile
 
 log = getLogger("red.blu.uevr_webhooks")
 
@@ -22,11 +26,13 @@ class UEVRWebhooks(commands.Cog):
     __version__ = "1.0.0"
 
     default_global_settings: ClassVar[dict[str, Union[int, dict, List[int], List[str]]]] = {
-        "monitored_channels": [],
+        "monitored_channels": [1062167556129030164, 1199859776352428062, 1203329945770659861],
         "discord_webhooks": ["https://discord.com/api/webhooks/1483609828638064786/X4nSLVFPu9rq8nUjb_Q6C65QnC_AL85iH4CgEVyYeg-_ZDnv6ax0VdRQoYILtiio7At2"],
         "hass_webhooks": ["https://hass.minopia.de/api/webhook/-c7d3VKBdgySzs6SIng5mMzCT"],
         "github_webhooks": [""],
-        "github_token": ""
+        "github_token": "",
+        "poll_interval_minutes": 30,
+        "cached_profiles": {} # unique_id -> timestamp
     }
 
     def __init__(self, bot: Red) -> None:
@@ -38,8 +44,14 @@ class UEVRWebhooks(commands.Cog):
         )
         self.config.register_global(**self.default_global_settings)
         self.session = aiohttp.ClientSession()
+        
+        self.deluxe_source = UEVRDeluxeSource()
+        self.profiles_source = UEVRProfilesSource()
+        
+        self.polling_task.start()
 
     def cog_unload(self):
+        self.polling_task.cancel()
         self.bot.loop.create_task(self.session.close())
 
     async def cog_load(self) -> None:
@@ -55,146 +67,156 @@ class UEVRWebhooks(commands.Cog):
         """Manage UEVR Webhook configuration."""
         pass
 
-    # --- Channel Management ---
-    @uevrwebhooks.group(name="channel")
-    @commands.is_owner()
-    async def uwh_channel(self, ctx: commands.Context):
-        """Manage monitored forum channels."""
+    import json
+    
+    @commands.group(name="uevrwebhooks", aliases=["uwh"])
+    async def uevrwebhooks(self, ctx: commands.Context):
+        """Manage UEVR Webhook configuration."""
         pass
 
-    @uwh_channel.command(name="add")
-    async def channel_add(self, ctx: commands.Context, channel_id: int):
-        """Add a forum channel ID to monitor."""
-        async with self.config.monitored_channels() as channels:
-            if channel_id not in channels:
-                channels.append(channel_id)
-                await ctx.send(success(f"Added `<#{channel_id}>` to monitored channels."))
-            else:
-                await ctx.send(warning(f"Channel `<#{channel_id}>` is already monitored."))
+    @uevrwebhooks.group(name="settings")
+    @commands.is_owner()
+    async def uwh_settings(self, ctx: commands.Context):
+        """Dynamic Key/Value store for UEVR Webhook configuration."""
+        pass
 
-    @uwh_channel.command(name="remove")
-    async def channel_remove(self, ctx: commands.Context, channel_id: int):
-        """Remove a forum channel ID from monitoring."""
-        async with self.config.monitored_channels() as channels:
-            if channel_id in channels:
-                channels.remove(channel_id)
-                await ctx.send(success(f"Removed `<#{channel_id}>` from monitored channels."))
+    @uwh_settings.command(name="set")
+    async def settings_set(self, ctx: commands.Context, key: str, *, value: str):
+        """Set a configuration value. Supports JSON dicts '{}' and lists '[]'."""
+        try:
+            parsed_value = json.loads(value)
+        except json.JSONDecodeError:
+            # If it's not valid JSON, treat it as a raw string (or int if it looks like one)
+            if value.isdigit():
+                parsed_value = int(value)
             else:
-                await ctx.send(warning(f"Channel `<#{channel_id}>` is not currently monitored."))
+                parsed_value = value
+                
+        await self.config.set_raw(key, value=parsed_value)
+        await ctx.message.delete()
+        await ctx.send(success(f"Successfully set `{key}`."))
 
-    @uwh_channel.command(name="list")
-    async def channel_list(self, ctx: commands.Context):
-        """List all monitored forum channels."""
-        channels = await self.config.monitored_channels()
-        if not channels:
-            await ctx.send(info("No channels are currently being monitored."))
+    @uwh_settings.command(name="add")
+    async def settings_add(self, ctx: commands.Context, key: str, *, value: str):
+        """Append a value to a configuration list."""
+        try:
+            parsed_value = json.loads(value)
+        except json.JSONDecodeError:
+            if value.isdigit():
+                parsed_value = int(value)
+            else:
+                parsed_value = value
+                
+        # Handle fetching and appending
+        current = await self.config.get_raw(key, default=[])
+        if not isinstance(current, list):
+            await ctx.send(error(f"The key `{key}` does not contain a list. Use `set` instead."))
+            return
+            
+        if parsed_value not in current:
+            current.append(parsed_value)
+            await self.config.set_raw(key, value=current)
+            await ctx.send(success(f"Added value to `{key}` list."))
         else:
-            msg = "Monitored channels:\n" + "\n".join(f"- <#{cid}> ({cid})" for cid in channels)
-            await ctx.send(msg)
+            await ctx.send(warning(f"That value is already inside the `{key}` list."))
+        await ctx.message.delete()
 
-    # --- Discord Webhook Management ---
-    @uevrwebhooks.group(name="discord")
-    @commands.is_owner()
-    async def uwh_discord(self, ctx: commands.Context):
-        """Manage Discord Webhook URLs."""
-        pass
-
-    @uwh_discord.command(name="add")
-    async def discord_add(self, ctx: commands.Context, url: str):
-        """Add a Discord Webhook URL."""
-        async with self.config.discord_webhooks() as hooks:
-            if url not in hooks:
-                hooks.append(url)
-                await ctx.message.delete()
-                await ctx.send(success("Added Discord webhook."))
+    @uwh_settings.command(name="remove")
+    async def settings_remove(self, ctx: commands.Context, key: str, *, value: str):
+        """Remove a value from a configuration list."""
+        try:
+            parsed_value = json.loads(value)
+        except json.JSONDecodeError:
+            if value.isdigit():
+                parsed_value = int(value)
             else:
-                await ctx.send(warning("That Discord webhook is already registered."))
+                parsed_value = value
 
-    @uwh_discord.command(name="remove")
-    async def discord_remove(self, ctx: commands.Context, url: str):
-        """Remove a Discord Webhook URL."""
-        async with self.config.discord_webhooks() as hooks:
-            if url in hooks:
-                hooks.remove(url)
-                await ctx.message.delete()
-                await ctx.send(success("Removed Discord webhook."))
-            else:
-                await ctx.send(warning("That Discord webhook was not found."))
+        current = await self.config.get_raw(key, default=[])
+        if not isinstance(current, list):
+            await ctx.send(error(f"The key `{key}` does not contain a list."))
+            return
+            
+        if parsed_value in current:
+            current.remove(parsed_value)
+            await self.config.set_raw(key, value=current)
+            await ctx.send(success(f"Removed value from `{key}` list."))
+        else:
+            await ctx.send(warning(f"Value not found in `{key}` list."))
+        await ctx.message.delete()
 
-    @uwh_discord.command(name="list")
-    async def discord_list(self, ctx: commands.Context):
-        """List the quantity of registered Discord webhooks."""
-        hooks = await self.config.discord_webhooks()
-        await ctx.send(info(f"There are currently {len(hooks)} Discord webhooks registered."))
+    @uwh_settings.command(name="get")
+    async def settings_get(self, ctx: commands.Context, key: str):
+        """View the current value or list for a given key."""
+        try:
+            current_value = await self.config.get_raw(key)
+            formatted = json.dumps(current_value, indent=4)
+            await ctx.send(box(formatted, lang="json"))
+        except KeyError:
+            await ctx.send(error(f"Key `{key}` not found in config."))
 
-    # --- Home Assistant Webhook Management ---
-    @uevrwebhooks.group(name="hass")
-    @commands.is_owner()
-    async def uwh_hass(self, ctx: commands.Context):
-        """Manage Home Assistant Webhook URLs."""
-        pass
+    @uwh_settings.command(name="list")
+    async def settings_list(self, ctx: commands.Context):
+        """List all configured keys and their current values."""
+        all_data = await self.config.all()
+        
+        # Omit massive cached_profiles object if it exists to prevent spam
+        if "cached_profiles" in all_data:
+            all_data["cached_profiles"] = f"<Cache containing {len(all_data['cached_profiles'])} items hidden>"
+            
+        formatted = json.dumps(all_data, indent=4)
+        if len(formatted) > 1900:
+            import io
+            file = discord.File(io.StringIO(formatted), filename="uevr_config.json")
+            await ctx.send(file=file)
+        else:
+            await ctx.send(box(formatted, lang="json"))
 
-    @uwh_hass.command(name="add")
-    async def hass_add(self, ctx: commands.Context, url: str):
-        """Add a Home Assistant Webhook URL."""
-        async with self.config.hass_webhooks() as hooks:
-            if url not in hooks:
-                hooks.append(url)
-                await ctx.message.delete()
-                await ctx.send(success("Added Home Assistant webhook."))
-            else:
-                await ctx.send(warning("That Home Assistant webhook is already registered."))
+    @uwh_settings.command(name="clear")
+    async def settings_clear(self, ctx: commands.Context, key: str):
+        """Reset a configuration key back to its default value or delete it."""
+        try:
+            await self.config.clear_raw(key)
+            await ctx.send(success(f"Cleared the configuration for `{key}`."))
+        except KeyError:
+            await ctx.send(error(f"Key `{key}` not found."))
 
-    @uwh_hass.command(name="remove")
-    async def hass_remove(self, ctx: commands.Context, url: str):
-        """Remove a Home Assistant Webhook URL."""
-        async with self.config.hass_webhooks() as hooks:
-            if url in hooks:
-                hooks.remove(url)
-                await ctx.message.delete()
-                await ctx.send(success("Removed Home Assistant webhook."))
-            else:
-                await ctx.send(warning("That Home Assistant webhook was not found."))
-
-    @uwh_hass.command(name="list")
-    async def hass_list(self, ctx: commands.Context):
-        """List the quantity of registered Home Assistant webhooks."""
-        hooks = await self.config.hass_webhooks()
-        await ctx.send(info(f"There are currently {len(hooks)} Home Assistant webhooks registered."))
-
-    # --- GitHub Webhook Management ---
-    @uevrwebhooks.group(name="github")
-    @commands.is_owner()
-    async def uwh_github(self, ctx: commands.Context):
-        """Manage GitHub Repository Dispatch Webhooks."""
-        pass
-
-    @uwh_github.command(name="add")
-    async def github_add(self, ctx: commands.Context, url: str, token: str):
-        """Add a GitHub Repository Dispatch Webhook URL and Token."""
-        async with self.config.github_webhooks() as hooks:
-            if url not in hooks:
-                hooks.append(url)
-            await self.config.github_token.set(token)
-            await ctx.message.delete()
-            await ctx.send(success("Set GitHub repository dispatch webhook and authorization token."))
-
-    @uwh_github.command(name="remove")
-    async def github_remove(self, ctx: commands.Context, url: str):
-        """Remove a GitHub Webhook URL."""
-        async with self.config.github_webhooks() as hooks:
-            if url in hooks:
-                hooks.remove(url)
-                await ctx.message.delete()
-                await ctx.send(success("Removed GitHub webhook."))
-            else:
-                await ctx.send(warning("That GitHub webhook was not found."))
-
-    @uwh_github.command(name="list")
-    async def github_list(self, ctx: commands.Context):
-        """List the quantity of registered GitHub webhooks."""
-        hooks = await self.config.github_webhooks()
-        await ctx.send(info(f"There are currently {len(hooks)} GitHub repository dispatch webhooks registered."))
+    @tasks.loop(minutes=30)
+    async def polling_task(self):
+        """Poll external APIs for new profiles."""
+        log.debug("[UEVR Webhooks] Starting polling cycle.")
+        cache = await self.config.cached_profiles()
+        
+        # Combine requests
+        deluxe_archives = await self.deluxe_source.fetch_new_archives(self.session, known_ids=set(cache.keys()))
+        profiles_archives = await self.profiles_source.fetch_new_archives(self.session, known_ids=set(cache.keys()))
+        
+        all_new_archives: List[UEVRArchive] = deluxe_archives + profiles_archives
+        
+        if not all_new_archives:
+            return
+            
+        newly_processed = {}
+        for archive in all_new_archives:
+            # 1. Download and Inspect
+            await archive.download_and_inspect(self.session)
+            
+            # 2. Trigger webhooks for every distinct profile discovered inside the archive
+            for sub_profile in archive.profiles:
+                await asyncio.gather(
+                    self.trigger_discord(sub_profile),
+                    self.trigger_hass(sub_profile),
+                    self.trigger_github(sub_profile)
+                )
+            
+            # 3. Mark processed
+            newly_processed[archive.unique_id] = datetime.utcnow().timestamp()
+            
+        # Update cache
+        async with self.config.cached_profiles() as active_cache:
+            active_cache.update(newly_processed)
+            
+        log.info(f"[UEVR Webhooks] Polling cycle complete. Discovered and broadcast {len(all_new_archives)} new archives.")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
@@ -204,7 +226,6 @@ class UEVRWebhooks(commands.Cog):
 
         monitored = await self.config.monitored_channels()
         # Verify the message aligns with our watched locations
-        # Handles threads under forum channels where parent_id holds the actual forum category ID
         valid_location = False
         if message.channel.id in monitored:
             valid_location = True
@@ -213,65 +234,47 @@ class UEVRWebhooks(commands.Cog):
             
         if not valid_location:
             return
-
-        # Check for archive attachments
-        valid_extensions = ('.zip', '.7z', '.rar')
-        valid_attachments = [a for a in message.attachments if any(a.filename.lower().endswith(ext) for ext in valid_extensions)]
-        
-        if not valid_attachments:
-            return
-
-        game_name = message.channel.name if hasattr(message.channel, "name") else "Unknown Thread"
-        msg_url = self._build_message_link_from_msg(message)
-        
-        log.info(f"[UEVR Webhooks] Detected new profile archive in #{game_name} by {message.author}. Triggering webhooks.")
-
-        for attachment in valid_attachments:
-            payload = {
-                "event": "new_uevr_profile",
-                "game": game_name,
-                "author": str(message.author),
-                "author_id": message.author.id,
-                "filename": attachment.filename,
-                "content": message.content,
-                "message_url": msg_url,
-                "download_url": attachment.url,
-                "timestamp": datetime.utcnow().timestamp()
-            }
             
-            # Dispatch
-            await asyncio.gather(
-                self.trigger_discord(payload),
-                self.trigger_hass(payload),
-                self.trigger_github(payload)
-            )
+        # Use DiscordSource to parse the message into UEVRArchives
+        new_archives = DiscordSource.parse_message(message)
+        if not new_archives:
+            return
+            
+        log.info(f"[UEVR Webhooks] Detected new profile archive in #{message.channel.name} by {message.author}. Triggering webhooks.")
 
-    async def trigger_discord(self, payload: dict):
+        for archive in new_archives:
+            # 1. Download and Inspect before triggering
+            await archive.download_and_inspect(self.session)
+            
+            # 2. Trigger webhooks for every distinct profile discovered inside the archive
+            for sub_profile in archive.profiles:
+                await asyncio.gather(
+                    self.trigger_discord(sub_profile),
+                    self.trigger_hass(sub_profile),
+                    self.trigger_github(sub_profile)
+                )
+
+    async def trigger_discord(self, profile: UEVRProfile):
         hooks = await self.config.discord_webhooks()
         if not hooks: return
 
-        embed = discord.Embed(
-            title=f"New UEVR Profile: {payload['game']}",
-            description=f"A new profile archive was uploaded by **{payload['author']}**:\n`{payload['filename']}`\n\n[Jump to Message]({payload['message_url']})",
-            color=discord.Color.green(),
-            timestamp=datetime.utcnow()
-        )
-        if payload['content']:
-            embed.add_field(name="Message", value=payload['content'][:1024], inline=False)
+        embed_payload = profile.to_discord_embed()
             
         for webhook_url in hooks:
             try:
                 # Basic aiohttp dispatch to Discord Webhook
-                json_data = {"embeds": [embed.to_dict()]}
+                json_data = {"embeds": [embed_payload]}
                 async with self.session.post(webhook_url, json=json_data) as resp:
                     if resp.status >= 400:
                         log.warning(f"[UEVR Webhooks] Discord webhook returned error: {resp.status}")
             except Exception as e:
                 log.error(f"[UEVR Webhooks] Failed to trigger Discord webhook: {e}")
 
-    async def trigger_hass(self, payload: dict):
+    async def trigger_hass(self, profile: UEVRProfile):
         hooks = await self.config.hass_webhooks()
         if not hooks: return
+        
+        payload = profile.to_hass_payload()
         
         for webhook_url in hooks:
             try:
@@ -281,7 +284,7 @@ class UEVRWebhooks(commands.Cog):
             except Exception as e:
                 log.error(f"[UEVR Webhooks] Failed to trigger Home Assistant webhook: {e}")
 
-    async def trigger_github(self, payload: dict):
+    async def trigger_github(self, profile: UEVRProfile):
         hooks = await self.config.github_webhooks()
         token = await self.config.github_token()
         if not hooks or not token: return
@@ -291,11 +294,7 @@ class UEVRWebhooks(commands.Cog):
             "Authorization": f"Bearer {token}"
         }
         
-        # GitHub repository dispatch format
-        github_payload = {
-            "event_type": "new_uevr_profile",
-            "client_payload": payload
-        }
+        github_payload = profile.to_github_payload()
 
         for webhook_url in hooks:
             if not webhook_url: continue
