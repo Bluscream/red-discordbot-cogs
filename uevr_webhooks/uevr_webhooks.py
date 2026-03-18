@@ -208,6 +208,7 @@ class UEVRWebhooks(commands.Cog):
                     self.trigger_hass(sub_profile),
                     self.trigger_github(sub_profile)
                 )
+                await asyncio.sleep(2.0)
             
             # 3. Mark processed
             newly_processed[archive.unique_id] = datetime.utcnow().timestamp()
@@ -253,6 +254,7 @@ class UEVRWebhooks(commands.Cog):
                     self.trigger_hass(sub_profile),
                     self.trigger_github(sub_profile)
                 )
+                await asyncio.sleep(1)
 
     async def trigger_discord(self, profile: UEVRProfile):
         hooks = await self.config.discord_webhooks()
@@ -261,14 +263,26 @@ class UEVRWebhooks(commands.Cog):
         embed_payload = profile.to_discord_embed()
             
         for webhook_url in hooks:
-            try:
-                # Basic aiohttp dispatch to Discord Webhook
-                json_data = {"embeds": [embed_payload]}
-                async with self.session.post(webhook_url, json=json_data) as resp:
-                    if resp.status >= 400:
-                        log.warning(f"[UEVR Webhooks] Discord webhook returned error: {resp.status}")
-            except Exception as e:
-                log.error(f"[UEVR Webhooks] Failed to trigger Discord webhook: {e}")
+            for _ in range(3):
+                try:
+                    # Basic aiohttp dispatch to Discord Webhook
+                    json_data = {"embeds": [embed_payload]}
+                    async with self.session.post(webhook_url, json=json_data) as resp:
+                        if resp.status == 429:
+                            try:
+                                data = await resp.json()
+                                retry_after = data.get('retry_after', float(resp.headers.get('Retry-After', 1.0)))
+                            except:
+                                retry_after = 1.0
+                            log.warning(f"[UEVR Webhooks] Discord rate limited (429). Retrying in {retry_after}s...")
+                            await asyncio.sleep(retry_after + 1)
+                            continue
+                        elif resp.status >= 400:
+                            log.warning(f"[UEVR Webhooks] Discord webhook returned error: {resp.status}")
+                        break
+                except Exception as e:
+                    log.error(f"[UEVR Webhooks] Failed to trigger Discord webhook: {e}")
+                    break
 
     async def trigger_hass(self, profile: UEVRProfile):
         hooks = await self.config.hass_webhooks()
