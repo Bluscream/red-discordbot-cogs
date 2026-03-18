@@ -1,3 +1,4 @@
+import asyncio
 import discord
 from redbot.core.bot import Red
 from .base import BaseTarget
