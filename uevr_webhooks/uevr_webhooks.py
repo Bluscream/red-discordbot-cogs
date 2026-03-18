@@ -76,7 +76,6 @@ class UEVRWebhooks(commands.Cog):
         """Build a Discord message link from a message object."""
         return f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}"
 
-    import json
 
     @commands.group(name="uevr", aliases=["uwh"], invoke_without_command=True)
     async def uevr_base(self, ctx: commands.Context):
@@ -237,7 +236,7 @@ class UEVRWebhooks(commands.Cog):
     @tasks.loop(minutes=30)
     async def polling_task(self):
         """Poll external APIs for new profiles."""
-        log.debug("[UEVR Webhooks] Starting polling cycle.")
+        log.info("[UEVR Webhooks] Starting polling cycle (v1.0.0).")
         cache = await self.config.cached_profiles()
         
         # Combine requests
