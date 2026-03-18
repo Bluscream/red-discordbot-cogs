@@ -47,7 +47,9 @@ class GitHubTarget(BaseTarget):
             if not webhook_url: continue
             try:
                 async with session.post(webhook_url, headers=headers, json=github_payload) as resp:
-                    if resp.status >= 400:
+                    if resp.status < 300:
+                        log.info(f"[Targets] Triggered GitHub repository_dispatch: {webhook_url}")
+                    elif resp.status >= 400:
                         log.warning(f"[Targets] GitHub webhook returned error: {resp.status}")
             except Exception as e:
                 log.error(f"[Targets] Failed to trigger GitHub webhook: {e}")

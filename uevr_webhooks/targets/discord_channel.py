@@ -39,6 +39,7 @@ class DiscordChannelTarget(BaseTarget):
                 channel = self.bot.get_channel(chan_id)
                 if channel:
                     msg = await channel.send(embed=discord_embed)
+                    log.info(f"[Targets] Sent profile embed to #{channel.name} ({chan_id})")
                     if hasattr(channel, "is_news") and channel.is_news():
                         try:
                             # Use a short timeout to avoid blocking for an hour on 429

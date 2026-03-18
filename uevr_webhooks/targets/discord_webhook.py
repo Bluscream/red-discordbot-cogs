@@ -36,6 +36,8 @@ class DiscordWebhookTarget(BaseTarget):
                             
                             await asyncio.sleep(retry_after + 1)
                             continue
+                        elif resp.status < 300:
+                            log.info(f"[Targets] Triggered Discord webhook: {webhook_url}")
                         elif resp.status >= 400:
                             log.warning(f"[Targets] Discord webhook returned error: {resp.status}")
                         break
