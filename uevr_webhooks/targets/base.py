@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 import aiohttp
 from ..models import UEVRProfile
 
