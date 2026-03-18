@@ -256,9 +256,10 @@ class UEVRWebhooks(commands.Cog):
             # 2. Trigger webhooks for every distinct profile discovered inside the archive
             for sub_profile in archive.profiles:
                 await asyncio.gather(
-                    self.trigger_discord(sub_profile),
-                    self.trigger_hass(sub_profile),
-                    self.trigger_github(sub_profile)
+                    self.target_discord_chan.send(sub_profile, self.session, await self.config.discord_channels()),
+                    self.target_discord_web.send(sub_profile, self.session, await self.config.discord_webhooks()),
+                    self.target_generic_web.send(sub_profile, self.session, await self.config.hass_webhooks()),
+                    self.target_github.send(sub_profile, self.session, await self.config.github_webhooks())
                 )
                 await asyncio.sleep(2.0)
             
