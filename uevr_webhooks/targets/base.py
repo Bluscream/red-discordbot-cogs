@@ -22,10 +22,11 @@ class BaseTarget(ABC):
         """Returns a dict ready to be passed to discord.Embed().to_dict()"""
         embed = discord.Embed(
             title=f"New UEVR Profile: {profile.title}",
-            description=f"{profile.archive.filename} was uploaded by **{profile.archive.authorName}**`",
+            description=f"`[{profile.archive.filename}]({profile.archive.sourceDownloadUrl})`",
             color=discord.Color.green(),
             timestamp=datetime.utcfromtimestamp(profile.archive.timestamp) if profile.archive.timestamp else datetime.utcnow()
         )
+        embed.set_author(name=profile.archive.authorName)
         
         if profile.internal_path and profile.internal_path != "[Root]":
             embed.add_field(name="Path in archive", value=f"`{profile.internal_path}`", inline=False)
@@ -39,10 +40,7 @@ class BaseTarget(ABC):
             embed.add_field(name="Source", value=profile.archive.sourceName, inline=True)
         
         if profile.archive.zipHash:
-            embed.add_field(name="Archive MD5 Hash", value=f"`{profile.archive.zipHash}`", inline=True)
-            
-        if profile.archive.sourceDownloadUrl:
-            embed.add_field(name="Download", value=f"[Direct Link]({profile.archive.sourceDownloadUrl})", inline=True)
+            embed.add_field(name="Archive MD5", value=f"`{profile.archive.zipHash}`", inline=True)
             
         if profile.content:
             file_list = []
