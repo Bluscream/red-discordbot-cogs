@@ -77,7 +77,7 @@ class UEVRWebhooks(commands.Cog):
         return f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}"
 
 
-    @commands.group(name="uevr", aliases=["uwh"], invoke_without_command=True)
+    @commands.group(name="uevrwh", aliases=["uwh"], invoke_without_command=True)
     async def uevr_base(self, ctx: commands.Context):
         """Base command for UEVR bot functions."""
         await ctx.send_help()
