@@ -38,7 +38,7 @@ class DiscordChannelTarget(BaseTarget):
             try:
                 channel = self.bot.get_channel(chan_id)
                 if channel:
-                    msg = await channel.send(embed=discord_embed)
+                    msg = await channel.send(embed=discord_embed, allowed_mentions=discord.AllowedMentions.none())
                     log.info(f"[Targets] Sent profile embed to #{channel.name} ({chan_id})")
                     if hasattr(channel, "is_news") and channel.is_news():
                         try:

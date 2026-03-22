@@ -11,7 +11,10 @@ class DiscordWebhookTarget(BaseTarget):
     
     def to_payload(self, profile: UEVRProfile) -> dict:
         """Converts profile into a Discord Webhook JSON payload dictionary."""
-        return {"embeds": [self.to_discord_embed(profile)]}
+        return {
+            "embeds": [self.to_discord_embed(profile)],
+            "allowed_mentions": {"parse": []}
+        }
         
     async def send(self, profile: UEVRProfile, session: aiohttp.ClientSession, hooks: list[str]) -> None:
         if not hooks:

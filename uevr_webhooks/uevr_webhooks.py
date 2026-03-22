@@ -102,7 +102,7 @@ class UEVRWebhooks(commands.Cog):
                 
         await self.config.set_raw(key, value=parsed_value)
         await ctx.message.delete()
-        await ctx.send(success(f"Successfully set `{key}`."))
+        await ctx.send(success(f"Successfully set `{key}`."), allowed_mentions=discord.AllowedMentions.none())
 
     @uwh_settings.command(name="add")
     async def settings_add(self, ctx: commands.Context, key: str, *, value: str):
@@ -118,15 +118,15 @@ class UEVRWebhooks(commands.Cog):
         # Handle fetching and appending
         current = await self.config.get_raw(key, default=[])
         if not isinstance(current, list):
-            await ctx.send(error(f"The key `{key}` does not contain a list. Use `set` instead."))
+            await ctx.send(error(f"The key `{key}` does not contain a list. Use `set` instead."), allowed_mentions=discord.AllowedMentions.none())
             return
             
         if parsed_value not in current:
             current.append(parsed_value)
             await self.config.set_raw(key, value=current)
-            await ctx.send(success(f"Added value to `{key}` list."))
+            await ctx.send(success(f"Added value to `{key}` list."), allowed_mentions=discord.AllowedMentions.none())
         else:
-            await ctx.send(warning(f"That value is already inside the `{key}` list."))
+            await ctx.send(warning(f"That value is already inside the `{key}` list."), allowed_mentions=discord.AllowedMentions.none())
         await ctx.message.delete()
 
     @uwh_settings.command(name="remove")
@@ -142,15 +142,15 @@ class UEVRWebhooks(commands.Cog):
 
         current = await self.config.get_raw(key, default=[])
         if not isinstance(current, list):
-            await ctx.send(error(f"The key `{key}` does not contain a list."))
+            await ctx.send(error(f"The key `{key}` does not contain a list."), allowed_mentions=discord.AllowedMentions.none())
             return
             
         if parsed_value in current:
             current.remove(parsed_value)
             await self.config.set_raw(key, value=current)
-            await ctx.send(success(f"Removed value from `{key}` list."))
+            await ctx.send(success(f"Removed value from `{key}` list."), allowed_mentions=discord.AllowedMentions.none())
         else:
-            await ctx.send(warning(f"Value not found in `{key}` list."))
+            await ctx.send(warning(f"Value not found in `{key}` list."), allowed_mentions=discord.AllowedMentions.none())
         await ctx.message.delete()
 
     @uwh_settings.command(name="get")
@@ -159,9 +159,9 @@ class UEVRWebhooks(commands.Cog):
         try:
             current_value = await self.config.get_raw(key)
             formatted = json.dumps(current_value, indent=4)
-            await ctx.send(box(formatted, lang="json"))
+            await ctx.send(box(formatted, lang="json"), allowed_mentions=discord.AllowedMentions.none())
         except KeyError:
-            await ctx.send(error(f"Key `{key}` not found in config."))
+            await ctx.send(error(f"Key `{key}` not found in config."), allowed_mentions=discord.AllowedMentions.none())
 
     @uwh_settings.command(name="list")
     async def settings_list(self, ctx: commands.Context):
@@ -176,18 +176,18 @@ class UEVRWebhooks(commands.Cog):
         if len(formatted) > 1900:
             import io
             file = discord.File(io.StringIO(formatted), filename="uevr_config.json")
-            await ctx.send(file=file)
+            await ctx.send(file=file, allowed_mentions=discord.AllowedMentions.none())
         else:
-            await ctx.send(box(formatted, lang="json"))
+            await ctx.send(box(formatted, lang="json"), allowed_mentions=discord.AllowedMentions.none())
 
     @uwh_settings.command(name="clear")
     async def settings_clear(self, ctx: commands.Context, key: str):
         """Reset a configuration key back to its default value or delete it."""
         try:
             await self.config.clear_raw(key)
-            await ctx.send(success(f"Cleared the configuration for `{key}`."))
+            await ctx.send(success(f"Cleared the configuration for `{key}`."), allowed_mentions=discord.AllowedMentions.none())
         except KeyError:
-            await ctx.send(error(f"Key `{key}` not found."))
+            await ctx.send(error(f"Key `{key}` not found."), allowed_mentions=discord.AllowedMentions.none())
 
 
     @uevr_base.command(name="clear")
@@ -198,7 +198,7 @@ class UEVRWebhooks(commands.Cog):
         webhook_urls = await self.config.discord_webhooks()
         
         if not channels:
-            return await ctx.send(warning("No discord_channels are currently configured for posting."))
+            return await ctx.send(warning("No discord_channels are currently configured for posting."), allowed_mentions=discord.AllowedMentions.none())
             
         import re
         webhook_ids = set()
@@ -207,7 +207,7 @@ class UEVRWebhooks(commands.Cog):
             if match:
                 webhook_ids.add(int(match.group(1)))
 
-        await ctx.send(info(f"Attempting to clear bot and webhook messages in {len(channels)} configured channel(s)..."))
+        await ctx.send(info(f"Attempting to clear bot and webhook messages in {len(channels)} configured channel(s)..."), allowed_mentions=discord.AllowedMentions.none())
         
         def purge_check(m: discord.Message):
             if m.author == self.bot.user:
@@ -227,11 +227,11 @@ class UEVRWebhooks(commands.Cog):
                 deleted = await channel.purge(limit=1000, check=purge_check)
                 cleared_count += len(deleted)
             except discord.Forbidden:
-                await ctx.send(error(f"I don't have permission to manage messages in <#{chan_id}>."))
+                await ctx.send(error(f"I don't have permission to manage messages in <#{chan_id}>."), allowed_mentions=discord.AllowedMentions.none())
             except discord.HTTPException as e:
-                await ctx.send(error(f"Failed to clear <#{chan_id}>: {e}"))
+                await ctx.send(error(f"Failed to clear <#{chan_id}>: {e}"), allowed_mentions=discord.AllowedMentions.none())
                 
-        await ctx.send(success(f"Successfully cleared {cleared_count} bot/webhook message(s) from posting channels."))
+        await ctx.send(success(f"Successfully cleared {cleared_count} bot/webhook message(s) from posting channels."), allowed_mentions=discord.AllowedMentions.none())
 
     @tasks.loop(minutes=30)
     async def polling_task(self):
