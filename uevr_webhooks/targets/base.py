@@ -14,6 +14,11 @@ def format_size(size_bytes: int) -> str:
 import discord
 from datetime import datetime
 
+def escape_mentions(text: str) -> str:
+    if not text:
+        return text
+    return str(text).replace("@", "\\@")
+
 class BaseTarget(ABC):
     """Abstract base class for a webhook/dispatch target."""
     
@@ -21,23 +26,24 @@ class BaseTarget(ABC):
     def to_discord_embed(profile: UEVRProfile) -> dict:
         """Returns a dict ready to be passed to discord.Embed().to_dict()"""
         embed = discord.Embed(
-            title=f"New UEVR Profile: {profile.title}",
-            description=f"`[{profile.archive.filename}]({profile.archive.sourceDownloadUrl})`",
+            title=escape_mentions(f"New UEVR Profile: {profile.title}"),
+            description=f"`[{escape_mentions(profile.archive.filename)}]({profile.archive.sourceDownloadUrl})`",
             color=discord.Color.green(),
             timestamp=datetime.utcfromtimestamp(profile.archive.timestamp) if profile.archive.timestamp else datetime.utcnow()
         )
-        embed.set_author(name=profile.archive.authorName)
+        embed.set_author(name=escape_mentions(profile.archive.authorName))
         
         if profile.internal_path and profile.internal_path != "[Root]":
-            embed.add_field(name="Path in archive", value=f"`{profile.internal_path}`", inline=False)
+            embed.add_field(name="Path in archive", value=f"`{escape_mentions(profile.internal_path)}`", inline=False)
             
         if profile.archive.description:
-            embed.add_field(name="Description", value=profile.archive.description[:1024], inline=False)
+            embed.add_field(name="Description", value=escape_mentions(profile.archive.description[:1024]), inline=False)
             
+        source_name = escape_mentions(profile.archive.sourceName)
         if profile.archive.sourceUrl:
-            embed.add_field(name="Source", value=f"[{profile.archive.sourceName}]({profile.archive.sourceUrl})", inline=True)
+            embed.add_field(name="Source", value=f"[{source_name}]({profile.archive.sourceUrl})", inline=True)
         else:
-            embed.add_field(name="Source", value=profile.archive.sourceName, inline=True)
+            embed.add_field(name="Source", value=source_name, inline=True)
         
         if profile.archive.zipHash:
             embed.add_field(name="Archive MD5", value=f"`{profile.archive.zipHash}`", inline=True)
@@ -46,7 +52,7 @@ class BaseTarget(ABC):
             file_list = []
             for path, info in profile.content.items():
                 size_str = format_size(info.get('size', 0))
-                file_list.append(f"{path} ({size_str})")
+                file_list.append(f"{escape_mentions(path)} ({size_str})")
             
             # Embed fields have a 1024 char limit. Account for code block ticks and more line.
             files_str = ""
