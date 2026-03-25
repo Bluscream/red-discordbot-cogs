@@ -27,7 +27,7 @@ class BaseTarget(ABC):
         """Returns a dict ready to be passed to discord.Embed().to_dict()"""
         embed = discord.Embed(
             title=escape_mentions(f"New UEVR Profile: {profile.title}"),
-            description=f"`[{escape_mentions(profile.archive.filename)}]({profile.archive.sourceDownloadUrl})`",
+            description=f"[{escape_mentions(profile.archive.filename)}]({profile.archive.sourceDownloadUrl})",
             color=discord.Color.green(),
             timestamp=datetime.utcfromtimestamp(profile.archive.timestamp) if profile.archive.timestamp else datetime.utcnow()
         )
