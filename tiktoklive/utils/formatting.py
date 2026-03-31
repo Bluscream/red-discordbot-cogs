@@ -17,7 +17,7 @@ def get_user_avatar(event):
     return None
 
 def format_event(event, event_type: str, color: discord.Color = discord.Color.blue(), 
-                 can_embed: bool = True, streamer_name: str = "Unknown"):
+                 can_embed: bool = True, streamer_name: str = "Unknown", is_webhook: bool = False):
     """
     Formats a TikTok event into either a discord.Embed or a raw string with markdown links.
     """
@@ -48,6 +48,10 @@ def format_event(event, event_type: str, color: discord.Color = discord.Color.bl
         icon = "👋"
         content = "joined the room!"
 
+    # Special handling for webhooks: comments should be raw text to look like chat
+    if is_webhook and event_type == "comment":
+        return content
+
     if can_embed:
         embed = discord.Embed(
             description=content,
@@ -56,9 +60,6 @@ def format_event(event, event_type: str, color: discord.Color = discord.Color.bl
         )
         embed.set_author(name=nick, url=tiktok_url, icon_url=avatar)
         embed.set_footer(text=f"Monitoring @{streamer_name}")
-        
-        # Large thumbnail for gifts/joins? No, keep it as author icon for chat feel.
-        # But we can add a small thumbnail for the event type icon if we want.
         
         return embed
     else:

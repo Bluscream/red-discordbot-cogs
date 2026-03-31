@@ -56,22 +56,38 @@ class TikTokLive(commands.Cog):
     async def _message_worker(self):
         """Worker that processes the message queue at 1 message/sec."""
         log.info("TikTokLive message queue worker started.")
-        while True:
-            try:
-                channel_id, content = await self.message_queue.get()
-                channel = self.bot.get_channel(channel_id)
-                if channel:
-                    if isinstance(content, discord.Embed):
-                        await channel.send(embed=content)
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            while True:
+                try:
+                    target, content, nick, avatar = await self.message_queue.get()
+                    
+                    if isinstance(target, str) and target.startswith("https://discord.com/api/webhooks/"):
+                        # Webhook Mode
+                        try:
+                            webhook = discord.Webhook.from_url(target, session=session)
+                            if isinstance(content, discord.Embed):
+                                await webhook.send(embed=content, username=nick, avatar_url=avatar)
+                            else:
+                                await webhook.send(content=content, username=nick, avatar_url=avatar)
+                        except Exception as e:
+                            log.error(f"Webhook error: {e}")
                     else:
-                        await channel.send(content)
-                self.message_queue.task_done()
-                await asyncio.sleep(1.0) # Rate limit: 1 per second
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                log.error(f"Worker error: {e}")
-                await asyncio.sleep(5.0)
+                        # Standard Channel Mode
+                        channel = self.bot.get_channel(int(target))
+                        if channel:
+                            if isinstance(content, discord.Embed):
+                                await channel.send(embed=content)
+                            else:
+                                await channel.send(content)
+                    
+                    self.message_queue.task_done()
+                    await asyncio.sleep(1.0) # Rate limit: 1 per second
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    log.error(f"Worker error: {e}")
+                    await asyncio.sleep(5.0)
 
     async def _start_monitors(self):
         """Starts monitoring for all configured users on load."""
@@ -79,15 +95,19 @@ class TikTokLive(commands.Cog):
         users = await self.config.monitored_users()
         log.info(f"Starting monitors for {len(users)} users.")
         for username, data in users.items():
-            await self._start_session(username, data['voice_channel_id'], data['text_channel_id'])
+            # Migration logic for old keys
+            v_chan = data.get('voice_channel') or data.get('voice_channel_id')
+            t_chan = data.get('text_channel') or data.get('text_channel_id')
+            if v_chan and t_chan:
+                await self._start_session(username, v_chan, t_chan)
 
-    async def _start_session(self, username: str, voice_channel_id: int, text_channel_id: int):
+    async def _start_session(self, username: str, voice_channel: int, text_channel: Union[int, str]):
         """Initializes both voice and chat monitoring for a user."""
         username = username.strip().replace("@", "")
         if username in self.active_sessions:
             return
 
-        session = TikTokLiveSession(username, voice_channel_id, text_channel_id)
+        session = TikTokLiveSession(username, voice_channel, text_channel)
         self.active_sessions[username] = session
         
         # 1. Setup Chat Handler
@@ -96,7 +116,7 @@ class TikTokLive(commands.Cog):
         # 2. Setup Voice Handler
         voice_embed = await self.voice_handler.start_voice(session)
         if voice_embed:
-            await self.message_queue.put((text_channel_id, voice_embed))
+            await self.message_queue.put((text_channel, voice_embed, None, None))
 
     async def _stop_session(self, session: TikTokLiveSession):
         """Stops both voice and chat components and cleans up resources."""
@@ -105,7 +125,6 @@ class TikTokLive(commands.Cog):
             
         log.info(f"Stopping session for {session.username}")
         
-        # Stop components
         await self.chat_handler.stop_chat(session)
         await self.voice_handler.stop_voice(session)
         
@@ -121,18 +140,33 @@ class TikTokLive(commands.Cog):
     @tiktok.command()
     async def monitor(self, ctx, username: str, 
                       voice_channel: Union[discord.VoiceChannel, discord.StageChannel], 
-                      text_channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread]):
-        """Start monitoring a TikTok user and mirror to specific channels."""
+                      text_target: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread, str]):
+        """
+        Start monitoring a TikTok user.
+        text_target can be a Channel ID or a Discord Webhook URL.
+        """
         username = username.strip().replace("@", "")
         
+        target_val = text_target
+        display_target = ""
+        
+        if isinstance(text_target, str):
+            if not text_target.startswith("https://discord.com/api/webhooks/"):
+                return await ctx.send(error("Invalid Webhook URL. Must start with `https://discord.com/api/webhooks/`"))
+            target_val = text_target
+            display_target = "Webhook"
+        else:
+            target_val = text_target.id
+            display_target = text_target.mention
+
         async with self.config.monitored_users() as users:
             users[username] = {
-                "voice_channel_id": voice_channel.id,
-                "text_channel_id": text_channel.id
+                "voice_channel": voice_channel.id,
+                "text_channel": target_val
             }
         
-        await self._start_session(username, voice_channel.id, text_channel.id)
-        await ctx.send(success(f"Monitoring **@{username}**. Voice: {voice_channel.mention} | Text: {text_channel.mention}"))
+        await self._start_session(username, voice_channel.id, target_val)
+        await ctx.send(success(f"Monitoring **@{username}**. Voice: {voice_channel.mention} | Text: {display_target}"))
 
     @tiktok.command()
     async def stop(self, ctx, username: str):
@@ -157,5 +191,7 @@ class TikTokLive(commands.Cog):
         msg = "**Monitored TikTok Users:**\n"
         for user, data in users.items():
             status = "🟢 Active" if user in self.active_sessions else "🔴 Idle"
-            msg += f"- @{user}: {status}\n"
+            target = data.get('text_channel') or data.get('text_channel_id')
+            target_str = "Webhook" if isinstance(target, str) else f"<#{target}>"
+            msg += f"- @{user}: {status} (Target: {target_str})\n"
         await ctx.send(msg)

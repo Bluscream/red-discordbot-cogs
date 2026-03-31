@@ -29,9 +29,9 @@ class TikTokVoiceHandler:
 
     async def start_voice(self, session: TikTokLiveSession):
         """Connects to the voice channel and starts playing the TikTok stream."""
-        voice_channel = self.bot.get_channel(session.voice_channel_id)
+        voice_channel = self.bot.get_channel(session.voice_channel)
         if not voice_channel:
-            log.error(f"Voice channel {session.voice_channel_id} not found.")
+            log.error(f"Voice channel {session.voice_channel} not found.")
             return
 
         # 1. Connect or Move
