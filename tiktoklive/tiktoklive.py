@@ -188,23 +188,39 @@ class TikTokLive(commands.Cog):
         session.client = client
 
         def get_user_id(event):
-            for attr in ['user', 'user_info', 'operator', 'current_user']:
-                user = getattr(event, attr, None)
-                if user:
-                    for id_attr in ['unique_id', 'username', 'uniqueId', 'display_id']:
-                        val = getattr(user, id_attr, None)
-                        if val:
-                            return val
+            """Extreme Robust user ID extraction by bypassing buggy properties."""
+            # 1. Prioritize raw user_info or other direct fields to avoid the buggy .user property
+            for field in ['user_info', 'operator_info', 'current_user_info']:
+                info = getattr(event, field, None)
+                if info:
+                    for attr in ['unique_id', 'username', 'uniqueId', 'display_id', 'nickname']:
+                        val = getattr(info, attr, None)
+                        if val: return val
+            
+            # 2. Try the property but wrap in try-except to catch library-level crashes
+            try:
+                if hasattr(event, 'user') and event.user:
+                    return getattr(event.user, 'unique_id', 'Unknown')
+            except:
+                pass
+                
             return "Unknown"
 
         def get_nickname(event):
-            for attr in ['user', 'user_info', 'operator', 'current_user']:
-                user = getattr(event, attr, None)
-                if user:
-                    for nick_attr in ['nickname', 'nick_name', 'username', 'display_id', 'unique_id']:
-                        val = getattr(user, nick_attr, None)
-                        if val:
-                            return val
+            """Extreme Robust nickname extraction by bypassing buggy properties."""
+            for field in ['user_info', 'operator_info', 'current_user_info']:
+                info = getattr(event, field, None)
+                if info:
+                    for attr in ['nickname', 'nick_name', 'nickName', 'username', 'display_id', 'unique_id']:
+                        val = getattr(info, attr, None)
+                        if val: return val
+
+            try:
+                if hasattr(event, 'user') and event.user:
+                    return getattr(event.user, 'nickname', 'Unknown')
+            except:
+                pass
+
             return "Unknown"
 
         @client.on(ConnectEvent)
