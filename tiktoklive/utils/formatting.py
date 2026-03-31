@@ -81,7 +81,7 @@ def format_event(event, event_type: str, color: discord.Color = discord.Color.bl
         if event_type == "gift" and gift_icon:
             embed.set_thumbnail(url=gift_icon)
             
-        embed.set_footer(text=f"Monitoring @{streamer_name}")
+        embed.set_footer(text=f"@{streamer_name}")
         
         return embed
     else:
