@@ -1,4 +1,5 @@
 import asyncio
+from typing import Optional
 import logging
 import yt_dlp
 import discord
