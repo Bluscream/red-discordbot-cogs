@@ -13,10 +13,9 @@ from TikTokLive.events import CommentEvent, ConnectEvent, DisconnectEvent, LiveE
 log = logging.getLogger("red.blu.tiktoklive")
 
 class TikTokLiveSession:
-    def __init__(self, username: str, voice_channel_id: int, text_channel_id: Optional[int] = None):
+    def __init__(self, username: str, channel_id: int):
         self.username = username
-        self.voice_channel_id = voice_channel_id
-        self.text_channel_id = text_channel_id
+        self.channel_id = channel_id
         
         self.client: Optional[TikTokLiveClient] = None
         self.voice_client: Optional[discord.VoiceClient] = None
@@ -33,7 +32,7 @@ class TikTokLive(commands.Cog):
         self.config = Config.get_conf(self, identifier=837461920, force_registration=True)
         
         default_global = {
-            "streamers": {} # username -> {vc_id, text_id}
+            "streamers": {} # username -> channel_id
         }
         self.config.register_global(**default_global)
         
@@ -96,25 +95,24 @@ class TikTokLive(commands.Cog):
             return
         
         username = session.username
-        vc_id = session.voice_channel_id
-        vc = self.bot.get_channel(vc_id)
+        channel = self.bot.get_channel(session.channel_id)
         
-        if not vc or not isinstance(vc, discord.VoiceChannel):
-            log.warning(f"Voice channel {vc_id} not found for {username}. Skipping.")
+        if not channel or not isinstance(channel, discord.VoiceChannel):
+            log.warning(f"Voice channel {session.channel_id} not found for {username}. Skipping.")
             return
 
         session.is_running = True
         log.info(f"TikTok streamer @{username} is LIVE. Connecting...")
 
         # 1. Join Voice
-        guild = vc.guild
+        guild = channel.guild
         if guild.voice_client:
             session.voice_client = guild.voice_client
-            if guild.voice_client.channel.id != vc_id:
-                await guild.voice_client.move_to(vc)
+            if guild.voice_client.channel.id != channel.id:
+                await guild.voice_client.move_to(channel)
         else:
             try:
-                session.voice_client = await vc.connect(timeout=20.0, reconnect=True)
+                session.voice_client = await channel.connect(timeout=20.0, reconnect=True)
             except Exception as e:
                 log.error(f"Failed to connect to VC for {username}: {e}")
                 session.is_running = False
@@ -134,18 +132,14 @@ class TikTokLive(commands.Cog):
             except Exception as e:
                 log.error(f"Failed to play audio for {username}: {e}")
 
-        # 3. Post Announcement
-        text_chan = self.bot.get_channel(session.text_channel_id or vc_id)
-        if text_chan:
-            embed = discord.Embed(
-                title=f"🔴 @{username} is LIVE on TikTok!",
-                url=f"https://www.tiktok.com/@{username}/live",
-                color=discord.Color.red()
-            )
-            embed.set_footer(text="Streaming audio and mirroring chat into voice channel...")
-            await text_chan.send(embed=embed)
-
-        # 4. Setup Chat Client (Now Mandatory)
+        # 3. Post Announcement & Join Chat
+        embed = discord.Embed(
+            title=f"🔴 @{username} is LIVE on TikTok!",
+            url=f"https://www.tiktok.com/@{username}/live",
+            color=discord.Color.red()
+        )
+        embed.set_footer(text="Streaming audio into voice channel...")
+        await channel.send(embed=embed)
         self._setup_chat_client(session)
 
     def _setup_chat_client(self, session: TikTokLiveSession):
@@ -154,16 +148,13 @@ class TikTokLive(commands.Cog):
 
         @client.on(CommentEvent)
         async def on_comment(event: CommentEvent):
-            chan_id = session.text_channel_id or session.voice_channel_id
-            channel = self.bot.get_channel(chan_id)
-            if channel:
-                # Check permissions
-                if channel.permissions_for(channel.guild.me).send_messages:
-                    try:
-                        clean_msg = discord.utils.escape_mentions(event.comment)
-                        await channel.send(f"💬 **{event.user.nickname}:** {clean_msg}")
-                    except Exception as e:
-                        log.debug(f"Mirror error for @{session.username}: {e}")
+            channel = self.bot.get_channel(session.channel_id)
+            if channel and channel.permissions_for(channel.guild.me).send_messages:
+                try:
+                    clean_msg = discord.utils.escape_mentions(event.comment)
+                    await channel.send(f"💬 **{event.user.nickname}:** {clean_msg}")
+                except Exception as e:
+                    log.debug(f"Mirror error for @{session.username}: {e}")
 
         @client.on(LiveEndEvent)
         async def on_live_end(event: LiveEndEvent):
@@ -178,13 +169,12 @@ class TikTokLive(commands.Cog):
         while True:
             try:
                 streamers = await self.config.streamers()
-                for username, data in streamers.items():
+                for username, channel_id in streamers.items():
                     try:
                         if username not in self.active_sessions:
                             self.active_sessions[username] = TikTokLiveSession(
                                 username=username,
-                                voice_channel_id=data["vc_id"],
-                                text_channel_id=data.get("text_id")
+                                channel_id=channel_id
                             )
                         
                         session = self.active_sessions[username]
@@ -219,10 +209,7 @@ class TikTokLive(commands.Cog):
         """Add a TikTok streamer to monitor."""
         username = username.lstrip("@").strip().lower()
         async with self.config.streamers() as streamers:
-            streamers[username] = {
-                "vc_id": voice_channel.id,
-                "text_id": voice_channel.id
-            }
+            streamers[username] = voice_channel.id
         
         await ctx.send(success(f"Now monitoring **@{username}**. I will join {voice_channel.mention} and mirror chat when they go live."))
         if username in self.active_sessions:
@@ -250,11 +237,11 @@ class TikTokLive(commands.Cog):
             return await ctx.send("No streamers are being monitored.")
         
         msg = "**Monitored TikTok Streamers:**\n"
-        for username, data in streamers.items():
-            vc = self.bot.get_channel(data['vc_id'])
-            vc_name = vc.name if vc else "Unknown VC"
+        for username, channel_id in streamers.items():
+            channel = self.bot.get_channel(channel_id)
+            channel_name = channel.name if channel else f"Unknown Channel ({channel_id})"
             status = "🔴 Live" if username in self.active_sessions and self.active_sessions[username].is_running else "⚪ Offline"
-            msg += f"- @{username}: {vc_name} ({status})\n"
+            msg += f"- @{username}: {channel_name} ({status})\n"
         
         await ctx.send(msg)
 
@@ -267,12 +254,11 @@ class TikTokLive(commands.Cog):
 
     async def _status_monitor_once(self):
         streamers = await self.config.streamers()
-        for username, data in streamers.items():
+        for username, channel_id in streamers.items():
             if username not in self.active_sessions:
                 self.active_sessions[username] = TikTokLiveSession(
                     username=username,
-                    voice_channel_id=data["vc_id"],
-                    text_channel_id=data.get("text_id")
+                    channel_id=channel_id
                 )
             session = self.active_sessions[username]
             try:
