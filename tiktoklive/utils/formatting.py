@@ -56,9 +56,19 @@ def format_event(event, event_type: str, color: discord.Color = discord.Color.bl
         icon = "👋"
         content = "joined the room!"
 
-    # Special handling for webhooks: comments should be raw text to look like chat
-    if is_webhook and event_type == "comment":
-        return content
+    # Special handling for webhooks: No embeds, use italicized "action" style for non-comments
+    if is_webhook:
+        if event_type == "comment":
+            return content
+        elif event_type == "join":
+            return f"*joined @{streamer_name}*"
+        elif event_type == "gift":
+            suffix = f" ({diamonds * count} 💎)" if diamonds > 0 else ""
+            return f"*sent **{count}x {gift_name}**{suffix}*"
+        elif event_type == "follow":
+            return f"*followed the streamer!*"
+        elif event_type == "share":
+            return f"*shared the live!*"
 
     if can_embed:
         embed = discord.Embed(
