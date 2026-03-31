@@ -22,9 +22,10 @@ from TikTokLive.events import (
 log = logging.getLogger("red.blu.tiktoklive")
 
 class TikTokLiveSession:
-    def __init__(self, username: str, channel_id: int):
+    def __init__(self, username: str, voice_channel_id: int, text_channel_id: int):
         self.username = username
-        self.channel_id = channel_id
+        self.voice_channel_id = voice_channel_id
+        self.text_channel_id = text_channel_id
         
         self.client: Optional[TikTokLiveClient] = None
         self.voice_client: Optional[discord.VoiceClient] = None
@@ -107,27 +108,28 @@ class TikTokLive(commands.Cog):
             return
         
         username = session.username
-        channel = self.bot.get_channel(session.channel_id)
+        voice_channel = self.bot.get_channel(session.voice_channel_id)
+        text_channel = self.bot.get_channel(session.text_channel_id)
         
-        if not channel or not isinstance(channel, discord.VoiceChannel):
-            log.warning(f"Voice channel {session.channel_id} not found for {username}. Skipping.")
+        if not voice_channel or not isinstance(voice_channel, discord.VoiceChannel):
+            log.warning(f"Voice channel {session.voice_channel_id} not found for {username}. Skipping.")
             return
 
         session.is_running = True
         log.info(f"TikTok streamer @{username} is LIVE. Connecting...")
 
         # 1. Join Voice
-        guild = channel.guild
+        guild = voice_channel.guild
         if guild.voice_client:
             session.voice_client = guild.voice_client
-            if guild.voice_client.channel.id != channel.id:
+            if guild.voice_client.channel.id != voice_channel.id:
                 try:
-                    await guild.voice_client.move_to(channel)
+                    await guild.voice_client.move_to(voice_channel)
                 except Exception as e:
                     log.error(f"Failed to move to VC for {username}: {e}")
         else:
             try:
-                session.voice_client = await channel.connect(timeout=20.0, reconnect=True)
+                session.voice_client = await voice_channel.connect(timeout=20.0, reconnect=True)
             except Exception as e:
                 log.error(f"Failed to connect to VC for {username}: {e}")
                 # We continue anyway to start chat mirroring
@@ -148,18 +150,40 @@ class TikTokLive(commands.Cog):
                     log.error(f"Failed to play audio for {username}: {e}")
 
         # 3. Post Announcement & Join Chat
-        embed = discord.Embed(
-            title=f"🔴 @{username} is LIVE on TikTok!",
-            url=f"https://www.tiktok.com/@{username}/live",
-            color=discord.Color.red()
-        )
-        embed.set_footer(text="Streaming audio into voice channel...")
-        await channel.send(embed=embed)
+        if text_channel and text_channel.permissions_for(text_channel.guild.me).send_messages:
+            embed = discord.Embed(
+                title=f"🔴 @{username} is LIVE on TikTok!",
+                url=f"https://www.tiktok.com/@{username}/live",
+                color=discord.Color.red()
+            )
+            embed.set_footer(text="Streaming audio into voice channel...")
+            await text_channel.send(embed=embed)
+        
         self._setup_chat_client(session)
 
     def _setup_chat_client(self, session: TikTokLiveSession):
         client = TikTokLiveClient(unique_id=f"@{session.username}")
         session.client = client
+
+        def get_user_id(event):
+            try:
+                if hasattr(event, 'user') and event.user:
+                    return event.user.unique_id
+            except:
+                pass
+            if hasattr(event, 'user_info'):
+                return getattr(event.user_info, 'display_id', 'Unknown')
+            return "Unknown"
+
+        def get_nickname(event):
+            try:
+                if hasattr(event, 'user') and event.user:
+                    return event.user.nickname
+            except:
+                pass
+            if hasattr(event, 'user_info'):
+                return getattr(event.user_info, 'nickname', 'Unknown')
+            return "Unknown"
 
         @client.on(ConnectEvent)
         async def on_connect(event: ConnectEvent):
@@ -167,25 +191,28 @@ class TikTokLive(commands.Cog):
 
         @client.on(JoinEvent)
         async def on_join(event: JoinEvent):
-            log.info(f"👤 {event.user.unique_id} joined @{session.username}'s live.")
-            # Optional: Add to Discord if desired, but joins can be spammy.
+            u_id = get_user_id(event)
+            log.info(f"👤 {u_id} joined @{session.username}'s live.")
 
         @client.on(CommentEvent)
         async def on_comment(event: CommentEvent):
-            log.info(f"💬 @{session.username} | {event.user.unique_id}: {event.comment}")
-            channel = self.bot.get_channel(session.channel_id)
+            u_id = get_user_id(event)
+            nick = get_nickname(event)
+            log.info(f"💬 @{session.username} | {u_id}: {event.comment}")
+            channel = self.bot.get_channel(session.text_channel_id)
             if channel and channel.permissions_for(channel.guild.me).send_messages:
                 try:
                     clean_msg = discord.utils.escape_mentions(event.comment)
-                    await channel.send(f"💬 **{event.user.nickname}:** {clean_msg}")
+                    await channel.send(f"💬 **{nick}:** {clean_msg}")
                 except Exception as e:
                     log.debug(f"Mirror error for @{session.username}: {e}")
 
         @client.on(GiftEvent)
         async def on_gift(event: GiftEvent):
-            gift_msg = f"🎁 {event.user.unique_id} sent {event.gift.count}x {event.gift.name}!"
+            u_id = get_user_id(event)
+            gift_msg = f"🎁 {u_id} sent {event.gift.count}x {event.gift.name}!"
             log.info(f"@{session.username} | {gift_msg}")
-            channel = self.bot.get_channel(session.channel_id)
+            channel = self.bot.get_channel(session.text_channel_id)
             if channel and channel.permissions_for(channel.guild.me).send_messages:
                 try:
                     await channel.send(f"**{gift_msg}**")
@@ -194,11 +221,13 @@ class TikTokLive(commands.Cog):
 
         @client.on(ShareEvent)
         async def on_share(event: ShareEvent):
-            log.info(f"🔗 {event.user.unique_id} shared @{session.username}'s live.")
+            u_id = get_user_id(event)
+            log.info(f"🔗 {u_id} shared @{session.username}'s live.")
 
         @client.on(FollowEvent)
         async def on_follow(event: FollowEvent):
-            log.info(f"➕ {event.user.unique_id} followed @{session.username}!")
+            u_id = get_user_id(event)
+            log.info(f"➕ {u_id} followed @{session.username}!")
 
         @client.on(LiveEndEvent)
         async def on_live_end(event: LiveEndEvent):
@@ -213,12 +242,21 @@ class TikTokLive(commands.Cog):
         while True:
             try:
                 streamers = await self.config.streamers()
-                for username, channel_id in streamers.items():
+                for username, data in streamers.items():
+                    # Handle backward compatibility
+                    if isinstance(data, int):
+                        voice_id = data
+                        text_id = data
+                    else:
+                        voice_id = data.get("voice")
+                        text_id = data.get("text")
+
                     try:
                         if username not in self.active_sessions:
                             self.active_sessions[username] = TikTokLiveSession(
                                 username=username,
-                                channel_id=channel_id
+                                voice_channel_id=voice_id,
+                                text_channel_id=text_id
                             )
                         
                         session = self.active_sessions[username]
@@ -248,13 +286,18 @@ class TikTokLive(commands.Cog):
         await ctx.send_help(ctx.command)
 
     @_tiktok.command(name="monitor")
-    async def _monitor(self, ctx: commands.Context, username: str, voice_channel: discord.VoiceChannel):
+    async def _monitor(self, ctx: commands.Context, username: str, voice_channel: discord.VoiceChannel, text_channel: Optional[Union[discord.TextChannel, discord.VoiceChannel]] = None):
         """Add a TikTok streamer to monitor."""
         username = username.lstrip("@").strip().lower()
-        async with self.config.streamers() as streamers:
-            streamers[username] = voice_channel.id
+        t_channel = text_channel or voice_channel
         
-        await ctx.send(success(f"Now monitoring **@{username}**. I will join {voice_channel.mention} and mirror chat when they go live."))
+        async with self.config.streamers() as streamers:
+            streamers[username] = {
+                "voice": voice_channel.id,
+                "text": t_channel.id
+            }
+        
+        await ctx.send(success(f"Now monitoring **@{username}**. Voice in {voice_channel.mention}, chat in {t_channel.mention}."))
         if username in self.active_sessions:
             del self.active_sessions[username]
 
@@ -280,11 +323,23 @@ class TikTokLive(commands.Cog):
             return await ctx.send("No streamers are being monitored.")
         
         msg = "**Monitored TikTok Streamers:**\n"
-        for username, channel_id in streamers.items():
-            channel = self.bot.get_channel(channel_id)
-            channel_name = channel.name if channel else f"Unknown Channel ({channel_id})"
+        for username, data in streamers.items():
+            if isinstance(data, int):
+                v_id = data
+                t_id = data
+            else:
+                v_id = data.get("voice")
+                t_id = data.get("text")
+            
+            voice = self.bot.get_channel(v_id)
+            text = self.bot.get_channel(t_id)
+            
+            v_name = voice.name if voice else f"Unknown ({v_id})"
+            t_name = text.name if text else f"Unknown ({t_id})"
+            
             status = "🔴 Live" if username in self.active_sessions and self.active_sessions[username].is_running else "⚪ Offline"
-            msg += f"- @{username}: {channel_name} ({status})\n"
+            channels = f"VC: {v_name}, Chat: {t_name}" if v_id != t_id else f"{v_name}"
+            msg += f"- **@{username}**: {channels} ({status})\n"
         
         await ctx.send(msg)
 
@@ -297,11 +352,19 @@ class TikTokLive(commands.Cog):
 
     async def _status_monitor_once(self):
         streamers = await self.config.streamers()
-        for username, channel_id in streamers.items():
+        for username, data in streamers.items():
+            if isinstance(data, int):
+                v_id = data
+                t_id = data
+            else:
+                v_id = data.get("voice")
+                t_id = data.get("text")
+
             if username not in self.active_sessions:
                 self.active_sessions[username] = TikTokLiveSession(
                     username=username,
-                    channel_id=channel_id
+                    voice_channel_id=v_id,
+                    text_channel_id=t_id
                 )
             session = self.active_sessions[username]
             try:
