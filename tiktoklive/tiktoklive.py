@@ -18,7 +18,7 @@ class TikTokLive(commands.Cog):
     
     def __init__(self, bot: Red):
         self.bot = bot
-        self.config = Config.get_conf(self, identifier=133769420)
+        self.config = Config.get_conf(self, identifier=943123456)
         default_global = {
             "monitored_users": {}
         }
@@ -77,6 +77,7 @@ class TikTokLive(commands.Cog):
         """Starts monitoring for all configured users on load."""
         await self.bot.wait_until_ready()
         users = await self.config.monitored_users()
+        log.info(f"Starting monitors for {len(users)} users.")
         for username, data in users.items():
             await self._start_session(username, data['voice_channel_id'], data['text_channel_id'])
 
