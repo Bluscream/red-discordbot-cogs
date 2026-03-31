@@ -21,7 +21,8 @@ class TikTokLive(commands.Cog):
         self.config = Config.get_conf(self, identifier=943123456)
         default_global = {
             "monitored_users": {},
-            "session_id": None
+            "session_id": None,
+            "tt_target_idc": None
         }
         self.config.register_global(**default_global)
         
@@ -128,11 +129,12 @@ class TikTokLive(commands.Cog):
             return
 
         session_id = await self.config.session_id()
+        tt_target_idc = await self.config.tt_target_idc()
         session = TikTokLiveSession(username, voice_channel, text_channel, discord_channel_id=discord_channel_id)
         self.active_sessions[username] = session
         
         # 1. Setup Chat Handler
-        self.chat_handler.setup_client(session, self._stop_session, session_id=session_id)
+        self.chat_handler.setup_client(session, self._stop_session, session_id=session_id, tt_target_idc=tt_target_idc)
         
         # 2. Setup Voice Handler
         voice_embed = await self.voice_handler.start_voice(session)
@@ -166,14 +168,15 @@ class TikTokLive(commands.Cog):
         pass
 
     @tiktokset.command(name="session")
-    async def set_session(self, ctx, session_id: str):
+    async def set_session(self, ctx, session_id: str, tt_target_idc: str):
         """
-        Set the TikTok sessionid cookie for authenticated features (chat bridging).
-        Get this from your browser's cookies while logged into TikTok.
+        Set the TikTok sessionid and tt_target_idc cookies for chat bridging.
+        Get these from your browser's cookies (tt.com) while logged in.
         """
         await self.config.session_id.set(session_id)
-        await ctx.message.delete() # Safety: Delete message containing cookie
-        await ctx.send(success("TikTok session ID updated! All new sessions will use this account for bridging."))
+        await self.config.tt_target_idc.set(tt_target_idc)
+        await ctx.message.delete()
+        await ctx.send(success(f"TikTok session updated (IDC: `{tt_target_idc}`). New sessions will use this for bridging."))
 
     @commands.group()
     @checks.admin_or_permissions(manage_guild=True)

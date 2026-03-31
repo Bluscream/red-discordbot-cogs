@@ -29,16 +29,17 @@ class TikTokChatHandler:
         self._on_stop_callback = None
         self.seen_events = set()
 
-    def setup_client(self, session: TikTokLiveSession, on_stop_callback, session_id: Optional[str] = None):
+    def setup_client(self, session: TikTokLiveSession, on_stop_callback, 
+                     session_id: Optional[str] = None, tt_target_idc: Optional[str] = None):
         """Initializes the TikTokLiveClient and registers event listeners."""
         client = TikTokLiveClient(unique_id=f"@{session.username}")
         
         # Apply Session ID for authentication if available
         if session_id:
             try:
-                # v6.6.5 requires tt_target_idc. Pass None to let library handle it.
-                client.web.set_session(session_id, None)
-                log.info(f"Authenticated session applied for @{session.username}")
+                # v6.6.5 requires tt_target_idc for authenticated actions like sending chat
+                client.web.set_session(session_id, tt_target_idc)
+                log.info(f"Authenticated session applied for @{session.username} (IDC: {tt_target_idc})")
             except Exception as e:
                 log.error(f"Failed to set session ID for @{session.username}: {e}")
         
