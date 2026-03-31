@@ -1,20 +1,6 @@
 import discord
 from redbot.core.utils.chat_formatting import bold
-from .metadata import get_user_id, get_nickname, get_user_link
-
-def get_user_avatar(event):
-    """Extracts the user's avatar URL from various possible fields."""
-    for field in ['user_info', 'operator_info', 'current_user_info', '_message']:
-        info = getattr(event, field, None)
-        if not info: continue
-        if field == '_message' and hasattr(info, 'user'):
-            info = info.user
-            
-        avatar_obj = getattr(info, 'avatar_thumb', None)
-        if avatar_obj:
-            url_list = getattr(avatar_obj, 'url_list', [])
-            if url_list: return url_list[0]
-    return None
+from .metadata import get_user_id, get_nickname, get_user_link, get_user_handle, get_user_avatar
 
 def format_event(event, event_type: str, color: discord.Color = discord.Color.blue(), 
                  can_embed: bool = True, streamer_name: str = "Unknown", is_webhook: bool = False):
@@ -22,16 +8,17 @@ def format_event(event, event_type: str, color: discord.Color = discord.Color.bl
     Formats a TikTok event into either a discord.Embed or a raw string with markdown links.
     """
     nick = get_nickname(event)
-    u_id = get_user_id(event)
+    handle = get_user_handle(event)
     user_link = get_user_link(event)
     avatar = get_user_avatar(event)
-    tiktok_url = f"https://tiktok.com/@{u_id}" if u_id != "Unknown" else None
+    tiktok_url = f"https://tiktok.com/@{handle}" if handle != "unknown" else None
     
     content = ""
     icon = ""
     
     if event_type == "comment":
         icon = "💬"
+        # Accessing raw comment field from protobuf
         content = getattr(event, 'comment', 'No comment provided.')
     elif event_type == "gift":
         icon = "🎁"
