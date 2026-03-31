@@ -70,18 +70,34 @@ class TikTokLive(commands.Cog):
             self.bot.loop.create_task(self._stop_session(session))
 
     async def _stop_session(self, session: TikTokLiveSession):
+        """Cleanly stop a live session and dispose of resources."""
+        if not session.is_running and not session.client and not session.voice_client:
+            return
+            
         log.info(f"Stopping session for {session.username}")
         session.is_running = False
+        
         if session.client:
             try:
                 session.client.stop()
             except Exception as e:
                 log.debug(f"Error stopping TikTokLiveClient for {session.username}: {e}")
-        if session.voice_client and session.voice_client.is_connected():
+            finally:
+                session.client = None
+                
+        if session.voice_client:
             try:
-                await session.voice_client.disconnect(force=True)
+                if session.voice_client.is_connected():
+                    await session.voice_client.disconnect(force=True)
             except Exception as e:
                 log.debug(f"Error disconnecting voice for {session.username}: {e}")
+            finally:
+                if session.voice_client.guild.voice_client == session.voice_client:
+                     # Double check if we need to cleanup the guild's voice client reference
+                     pass
+                session.voice_client = None
+        
+        session.hls_url = None
 
     async def _get_hls_url(self, username: str) -> Optional[str]:
         """Extract HLS URL using yt-dlp."""
