@@ -2,9 +2,11 @@ import logging
 
 log = logging.getLogger("red.blu.tiktoklive.metadata")
 
+METADATA_CONTAINERS = ['user_info', 'current_user_info', 'fromUser', 'user', 'operator_info', '_message']
+
 def get_user_id(event):
     """Numerical ID extraction."""
-    for field in ['user_info', 'current_user_info', 'fromUser', '_message']:
+    for field in METADATA_CONTAINERS:
         info = getattr(event, field, None)
         if hasattr(info, 'user'): info = info.user
         if not info: continue
@@ -16,7 +18,7 @@ def get_user_id(event):
 
 def get_user_handle(event):
     """Handle extraction (e.g. kitsu_dj) for URLs."""
-    for field in ['user_info', 'current_user_info', 'fromUser', '_message']:
+    for field in METADATA_CONTAINERS:
         info = getattr(event, field, None)
         if hasattr(info, 'user'): info = info.user
         if not info: continue
@@ -28,7 +30,7 @@ def get_user_handle(event):
 
 def get_nickname(event):
     """Nickname extraction (Display Name) for visual identity."""
-    for field in ['user_info', 'current_user_info', 'fromUser', '_message']:
+    for field in METADATA_CONTAINERS:
         info = getattr(event, field, None)
         if hasattr(info, 'user'): info = info.user
         if not info: continue
@@ -40,7 +42,7 @@ def get_nickname(event):
 
 def get_user_avatar(event) -> str:
     """Extract High-Res Avatar URL."""
-    for field in ['user_info', 'current_user_info', 'fromUser', '_message']:
+    for field in METADATA_CONTAINERS:
         info = getattr(event, field, None)
         if hasattr(info, 'user'): info = info.user
         if not info: continue
