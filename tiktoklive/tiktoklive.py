@@ -57,37 +57,53 @@ class TikTokLive(commands.Cog):
         """Worker that processes the message queue at 1 message/sec."""
         log.info("TikTokLive message queue worker started.")
         import aiohttp
-        async with aiohttp.ClientSession() as session:
+        # Use bot's session if available (Red 3.5+) or create one
+        session = getattr(self.bot, "session", None) or aiohttp.ClientSession()
+        try:
             while True:
                 try:
                     target, content, nick, avatar = await self.message_queue.get()
                     
-                    if isinstance(target, str) and target.startswith("https://discord.com/api/webhooks/"):
+                    if isinstance(target, str) and target.strip().startswith("https://discord.com/api/webhooks/"):
                         # Webhook Mode
+                        url = target.strip()
                         try:
-                            webhook = discord.Webhook.from_url(target, session=session)
+                            webhook = discord.Webhook.from_url(url, session=session)
                             if isinstance(content, discord.Embed):
                                 await webhook.send(embed=content, username=nick, avatar_url=avatar)
                             else:
                                 await webhook.send(content=content, username=nick, avatar_url=avatar)
+                        except discord.NotFound:
+                            log.error(f"Webhook 404: The webhook URL seems invalid or was deleted. URL start: {url[:55]}...")
+                        except discord.HTTPException as e:
+                            log.error(f"Webhook HTTP error: {e.status} {e.text} (Code: {e.code})")
                         except Exception as e:
-                            log.error(f"Webhook error: {e}")
+                            log.error(f"Webhook unexpected error: {e}")
                     else:
                         # Standard Channel Mode
-                        channel = self.bot.get_channel(int(target))
-                        if channel:
-                            if isinstance(content, discord.Embed):
-                                await channel.send(embed=content)
+                        try:
+                            chan_id = int(str(target).strip())
+                            channel = self.bot.get_channel(chan_id)
+                            if channel:
+                                if isinstance(content, discord.Embed):
+                                    await channel.send(embed=content)
+                                else:
+                                    await channel.send(content)
                             else:
-                                await channel.send(content)
+                                log.warning(f"Could not find channel {chan_id}")
+                        except ValueError:
+                            log.error(f"Invalid channel target: {target}")
                     
                     self.message_queue.task_done()
                     await asyncio.sleep(1.0) # Rate limit: 1 per second
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    log.error(f"Worker error: {e}")
+                    log.error(f"Worker iteration error: {e}")
                     await asyncio.sleep(5.0)
+        finally:
+            if not hasattr(self.bot, "session") and isinstance(session, aiohttp.ClientSession):
+                await session.close()
 
     async def _start_monitors(self):
         """Starts monitoring for all configured users on load."""
