@@ -1,0 +1,27 @@
+{
+    "name": "TikTokLive",
+    "author": [
+        "Bluscream (bluscream_)"
+    ],
+    "short": "Monitor TikTok lives, stream audio to VC, and mirror chat.",
+    "description": "Automatically joins a voice channel when a linked TikTok streamer goes live, streams the audio, and mirrors the live chat to the channel's text chat.",
+    "install_msg": "TikTokLive cog installed! Use `[p]tiktok` to configure.",
+    "tags": [
+        "tiktok",
+        "live",
+        "streaming",
+        "voice",
+        "chat"
+    ],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        11,
+        0
+    ],
+    "requirements": [
+        "TikTokLive",
+        "yt-dlp",
+        "pynacl"
+    ]
+}
