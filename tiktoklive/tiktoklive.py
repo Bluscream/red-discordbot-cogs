@@ -188,23 +188,23 @@ class TikTokLive(commands.Cog):
         session.client = client
 
         def get_user_id(event):
-            try:
-                if hasattr(event, 'user') and event.user:
-                    return event.user.unique_id
-            except:
-                pass
-            if hasattr(event, 'user_info'):
-                return getattr(event.user_info, 'display_id', 'Unknown')
+            for attr in ['user', 'user_info', 'operator', 'current_user']:
+                user = getattr(event, attr, None)
+                if user:
+                    for id_attr in ['unique_id', 'username', 'uniqueId', 'display_id']:
+                        val = getattr(user, id_attr, None)
+                        if val:
+                            return val
             return "Unknown"
 
         def get_nickname(event):
-            try:
-                if hasattr(event, 'user') and event.user:
-                    return event.user.nickname
-            except:
-                pass
-            if hasattr(event, 'user_info'):
-                return getattr(event.user_info, 'nickname', 'Unknown')
+            for attr in ['user', 'user_info', 'operator', 'current_user']:
+                user = getattr(event, attr, None)
+                if user:
+                    for nick_attr in ['nickname', 'nick_name', 'username', 'display_id', 'unique_id']:
+                        val = getattr(user, nick_attr, None)
+                        if val:
+                            return val
             return "Unknown"
 
         @client.on(ConnectEvent)
@@ -213,39 +213,58 @@ class TikTokLive(commands.Cog):
 
         @client.on(JoinEvent)
         async def on_join(event: JoinEvent):
-            u_id = get_user_id(event)
-            log.info(f"👤 {u_id} joined @{session.username}'s live.")
+            try:
+                u_id = get_user_id(event)
+                log.info(f"👤 {u_id} joined @{session.username}'s live.")
+                await self.message_queue.put((session.text_channel_id, f"👤 **{u_id}** joined!"))
+            except Exception as e:
+                log.error(f"Error in on_join for {session.username}: {e}")
 
         @client.on(CommentEvent)
         async def on_comment(event: CommentEvent):
-            u_id = get_user_id(event)
-            nick = get_nickname(event)
-            log.info(f"💬 @{session.username} | {u_id}: {event.comment}")
-            clean_msg = discord.utils.escape_mentions(event.comment)
-            await self.message_queue.put((
-                session.text_channel_id, 
-                f"💬 **{nick}:** {clean_msg}"
-            ))
+            try:
+                u_id = get_user_id(event)
+                nick = get_nickname(event)
+                log.info(f"💬 @{session.username} | {u_id}: {event.comment}")
+                clean_msg = discord.utils.escape_mentions(event.comment)
+                await self.message_queue.put((session.text_channel_id, f"💬 **{nick}:** {clean_msg}"))
+            except Exception as e:
+                log.error(f"Error in on_comment for {session.username}: {e}")
 
         @client.on(GiftEvent)
         async def on_gift(event: GiftEvent):
-            u_id = get_user_id(event)
-            gift_msg = f"🎁 {u_id} sent {event.gift.count}x {event.gift.name}!"
-            log.info(f"@{session.username} | {gift_msg}")
-            await self.message_queue.put((
-                session.text_channel_id, 
-                f"**{gift_msg}**"
-            ))
+            try:
+                if event.repeat_end != 1:
+                    return
+                u_id = get_user_id(event)
+                nick = get_nickname(event)
+                gift_name = getattr(event.gift, 'name', 'Unknown Gift')
+                count = getattr(event, 'repeat_count', 1)
+                msg = f"🎁 {nick} sent {count}x {gift_name}!"
+                log.info(f"@{session.username} | {msg}")
+                await self.message_queue.put((session.text_channel_id, f"**{msg}**"))
+            except Exception as e:
+                log.error(f"Error in on_gift for {session.username}: {e}")
 
         @client.on(ShareEvent)
         async def on_share(event: ShareEvent):
-            u_id = get_user_id(event)
-            log.info(f"🔗 {u_id} shared @{session.username}'s live.")
+            try:
+                u_id = get_user_id(event)
+                nick = get_nickname(event)
+                log.info(f"🔗 {nick} shared @{session.username}'s live.")
+                await self.message_queue.put((session.text_channel_id, f"🔗 **{nick}** shared the live!"))
+            except Exception as e:
+                log.error(f"Error in on_share for {session.username}: {e}")
 
         @client.on(FollowEvent)
         async def on_follow(event: FollowEvent):
-            u_id = get_user_id(event)
-            log.info(f"➕ {u_id} followed @{session.username}!")
+            try:
+                u_id = get_user_id(event)
+                nick = get_nickname(event)
+                log.info(f"➕ {nick} followed @{session.username}!")
+                await self.message_queue.put((session.text_channel_id, f"➕ **{nick}** followed!"))
+            except Exception as e:
+                log.error(f"Error in on_follow for {session.username}: {e}")
 
         @client.on(LiveEndEvent)
         async def on_live_end(event: LiveEndEvent):
