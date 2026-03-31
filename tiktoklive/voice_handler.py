@@ -35,10 +35,13 @@ class TikTokVoiceHandler:
             return
 
         # 1. Connect or Move
-        if session.voice_client and session.voice_client.is_connected():
-            if session.voice_client.channel.id != voice_channel.id:
+        current_vc = session.voice_client or voice_channel.guild.voice_client
+        
+        if current_vc and current_vc.is_connected():
+            session.voice_client = current_vc
+            if current_vc.channel.id != voice_channel.id:
                 try:
-                    await session.voice_client.move_to(voice_channel)
+                    await current_vc.move_to(voice_channel)
                 except Exception as e:
                     log.error(f"Failed to move to VC for {session.username}: {e}")
         else:

@@ -36,7 +36,8 @@ class TikTokChatHandler:
         # Apply Session ID for authentication if available
         if session_id:
             try:
-                client.web.set_session(session_id)
+                # v6.6.5 requires tt_target_idc. Pass None to let library handle it.
+                client.web.set_session(session_id, None)
                 log.info(f"Authenticated session applied for @{session.username}")
             except Exception as e:
                 log.error(f"Failed to set session ID for @{session.username}: {e}")
@@ -161,12 +162,25 @@ class TikTokChatHandler:
             except Exception as e:
                 log.error(f"Error in on_follow for {session.username}: {e}")
 
-        @client.on(LiveEndEvent)
-        async def on_live_end(event: LiveEndEvent):
             log.info(f"Stream ended for {session.username}")
             await self._on_stop_callback(session)
 
-        self.bot.loop.create_task(client.start())
+        self.bot.loop.create_task(self._start_client_safely(client, session))
+
+    async def _start_client_safely(self, client: TikTokLiveClient, session: TikTokLiveSession):
+        """Starts the client and catches common startup errors (Offline/Not Found)."""
+        from TikTokLive.client.errors import UserOfflineError, UserNotFoundError
+        try:
+            await client.start()
+        except UserOfflineError:
+            log.info(f"User @{session.username} is currently offline. Monitoring in background.")
+        except UserNotFoundError:
+            log.error(f"User @{session.username} was not found. Stopping monitor.")
+            await self._on_stop_callback(session)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            log.error(f"Unexpected error starting client for @{session.username}: {e}")
 
     async def send_room_chat(self, session: TikTokLiveSession, content: str):
         """Sends a message to the TikTok Live room chat. Requires session ID."""
