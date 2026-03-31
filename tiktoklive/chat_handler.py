@@ -1,6 +1,9 @@
 import asyncio
 import logging
+from typing import Union, Optional, List, Type
+
 import discord
+from redbot.core.bot import Red
 from TikTokLive import TikTokLiveClient
 from TikTokLive.events import (
     CommentEvent, 
