@@ -57,6 +57,8 @@ class TikTokLive(commands.Cog):
         """Worker that processes the message queue at 1 message/sec."""
         log.info("TikTokLive message queue worker started.")
         import aiohttp
+        # Disallow everyone/roles mentions for safety
+        allowed = discord.AllowedMentions(everyone=False, roles=False, users=True)
         # Use bot's session if available (Red 3.5+) or create one
         session = getattr(self.bot, "session", None) or aiohttp.ClientSession()
         try:
@@ -70,9 +72,9 @@ class TikTokLive(commands.Cog):
                         try:
                             webhook = discord.Webhook.from_url(url, session=session)
                             if isinstance(content, discord.Embed):
-                                await webhook.send(embed=content, username=nick, avatar_url=avatar)
+                                await webhook.send(embed=content, username=nick, avatar_url=avatar, allowed_mentions=allowed)
                             else:
-                                await webhook.send(content=content, username=nick, avatar_url=avatar)
+                                await webhook.send(content=content, username=nick, avatar_url=avatar, allowed_mentions=allowed)
                         except discord.NotFound:
                             log.error(f"Webhook 404: The webhook URL seems invalid or was deleted. URL start: {url[:55]}...")
                         except discord.HTTPException as e:
@@ -86,9 +88,9 @@ class TikTokLive(commands.Cog):
                             channel = self.bot.get_channel(chan_id)
                             if channel:
                                 if isinstance(content, discord.Embed):
-                                    await channel.send(embed=content)
+                                    await channel.send(embed=content, allowed_mentions=allowed)
                                 else:
-                                    await channel.send(content)
+                                    await channel.send(content, allowed_mentions=allowed)
                             else:
                                 log.warning(f"Could not find channel {chan_id}")
                         except ValueError:

@@ -2,6 +2,12 @@ import discord
 from redbot.core.utils.chat_formatting import bold
 from .metadata import get_user_id, get_nickname, get_user_link, get_user_handle, get_user_avatar
 
+def sanitize_mentions(text: str) -> str:
+    """Escapes @everyone and @here to prevent accidental pings."""
+    if not text:
+        return text
+    return text.replace("@everyone", "\\@everyone").replace("@here", "\\@here")
+
 def format_event(event, event_type: str, color: discord.Color = discord.Color.blue(), 
                  can_embed: bool = True, streamer_name: str = "Unknown", is_webhook: bool = False):
     """
@@ -19,12 +25,13 @@ def format_event(event, event_type: str, color: discord.Color = discord.Color.bl
     if event_type == "comment":
         icon = "💬"
         # Accessing raw comment field from protobuf
-        content = getattr(event, 'comment', 'No comment provided.')
+        raw_comment = getattr(event, 'comment', 'No comment provided.')
+        content = sanitize_mentions(raw_comment)
     elif event_type == "gift":
         icon = "🎁"
         # Robust gift info extraction from mGift (found in logs)
         mgift = getattr(event, 'm_gift', getattr(event, 'mGift', event.gift))
-        gift_name = getattr(mgift, 'name', 'Unknown Gift')
+        gift_name = sanitize_mentions(getattr(mgift, 'name', 'Unknown Gift'))
         count = getattr(event, 'repeat_count', 1)
         diamonds = getattr(mgift, 'diamondCount', getattr(mgift, 'diamond_count', 0))
         

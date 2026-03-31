@@ -16,7 +16,7 @@ from TikTokLive.events import (
     FollowEvent
 )
 from .session import TikTokLiveSession
-from .utils.formatting import format_event
+from .utils.formatting import format_event, sanitize_mentions
 from .utils.metadata import get_user_avatar, get_nickname, get_user_handle
 
 log = logging.getLogger("red.blu.tiktoklive.chat")
@@ -67,8 +67,8 @@ class TikTokChatHandler:
             try:
                 log_first_event(event)
                 can_embed = get_format_params(session.text_channel)
-                nick = get_nickname(event)
-                handle = get_user_handle(event)
+                nick = sanitize_mentions(get_nickname(event))
+                handle = sanitize_mentions(get_user_handle(event))
                 display_name = f"{nick} (@{handle})" if handle != "unknown" else nick
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "join", discord.Color.light_grey(), can_embed, 
@@ -82,8 +82,8 @@ class TikTokChatHandler:
             try:
                 log_first_event(event)
                 can_embed = get_format_params(session.text_channel)
-                nick = get_nickname(event)
-                handle = get_user_handle(event)
+                nick = sanitize_mentions(get_nickname(event))
+                handle = sanitize_mentions(get_user_handle(event))
                 display_name = f"{nick} (@{handle})" if handle != "unknown" else nick
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "comment", discord.Color.blue(), can_embed, 
@@ -99,8 +99,8 @@ class TikTokChatHandler:
                 if event.repeat_end != 1:
                     return
                 can_embed = get_format_params(session.text_channel)
-                nick = get_nickname(event)
-                handle = get_user_handle(event)
+                nick = sanitize_mentions(get_nickname(event))
+                handle = sanitize_mentions(get_user_handle(event))
                 display_name = f"{nick} (@{handle})" if handle != "unknown" else nick
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "gift", discord.Color.purple(), can_embed, 
@@ -114,8 +114,8 @@ class TikTokChatHandler:
             try:
                 log_first_event(event)
                 can_embed = get_format_params(session.text_channel)
-                nick = get_nickname(event)
-                handle = get_user_handle(event)
+                nick = sanitize_mentions(get_nickname(event))
+                handle = sanitize_mentions(get_user_handle(event))
                 display_name = f"{nick} (@{handle})" if handle != "unknown" else nick
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "share", discord.Color.gold(), can_embed, 
@@ -129,8 +129,8 @@ class TikTokChatHandler:
             try:
                 log_first_event(event)
                 can_embed = get_format_params(session.text_channel)
-                nick = get_nickname(event)
-                handle = get_user_handle(event)
+                nick = sanitize_mentions(get_nickname(event))
+                handle = sanitize_mentions(get_user_handle(event))
                 display_name = f"{nick} (@{handle})" if handle != "unknown" else nick
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "follow", discord.Color.teal(), can_embed, 
