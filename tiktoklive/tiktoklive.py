@@ -8,7 +8,16 @@ from redbot.core import Config, commands, checks
 from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import success, error, info, warning, bold
 from TikTokLive import TikTokLiveClient
-from TikTokLive.events import CommentEvent, ConnectEvent, DisconnectEvent, LiveEndEvent
+from TikTokLive.events import (
+    CommentEvent, 
+    ConnectEvent, 
+    DisconnectEvent, 
+    LiveEndEvent,
+    JoinEvent,
+    GiftEvent,
+    ShareEvent,
+    FollowEvent
+)
 
 log = logging.getLogger("red.blu.tiktoklive")
 
@@ -152,8 +161,18 @@ class TikTokLive(commands.Cog):
         client = TikTokLiveClient(unique_id=f"@{session.username}")
         session.client = client
 
+        @client.on(ConnectEvent)
+        async def on_connect(event: ConnectEvent):
+            log.info(f"Connected to TikTok Live Chat for @{session.username} (Room ID: {client.room_id})")
+
+        @client.on(JoinEvent)
+        async def on_join(event: JoinEvent):
+            log.info(f"👤 {event.user.unique_id} joined @{session.username}'s live.")
+            # Optional: Add to Discord if desired, but joins can be spammy.
+
         @client.on(CommentEvent)
         async def on_comment(event: CommentEvent):
+            log.info(f"💬 @{session.username} | {event.user.unique_id}: {event.comment}")
             channel = self.bot.get_channel(session.channel_id)
             if channel and channel.permissions_for(channel.guild.me).send_messages:
                 try:
@@ -161,6 +180,25 @@ class TikTokLive(commands.Cog):
                     await channel.send(f"💬 **{event.user.nickname}:** {clean_msg}")
                 except Exception as e:
                     log.debug(f"Mirror error for @{session.username}: {e}")
+
+        @client.on(GiftEvent)
+        async def on_gift(event: GiftEvent):
+            gift_msg = f"🎁 {event.user.unique_id} sent {event.gift.count}x {event.gift.name}!"
+            log.info(f"@{session.username} | {gift_msg}")
+            channel = self.bot.get_channel(session.channel_id)
+            if channel and channel.permissions_for(channel.guild.me).send_messages:
+                try:
+                    await channel.send(f"**{gift_msg}**")
+                except Exception as e:
+                    log.debug(f"Gift mirror error for @{session.username}: {e}")
+
+        @client.on(ShareEvent)
+        async def on_share(event: ShareEvent):
+            log.info(f"🔗 {event.user.unique_id} shared @{session.username}'s live.")
+
+        @client.on(FollowEvent)
+        async def on_follow(event: FollowEvent):
+            log.info(f"➕ {event.user.unique_id} followed @{session.username}!")
 
         @client.on(LiveEndEvent)
         async def on_live_end(event: LiveEndEvent):
