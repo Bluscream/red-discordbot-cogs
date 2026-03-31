@@ -112,28 +112,31 @@ class TikTokLive(commands.Cog):
         if guild.voice_client:
             session.voice_client = guild.voice_client
             if guild.voice_client.channel.id != channel.id:
-                await guild.voice_client.move_to(channel)
+                try:
+                    await guild.voice_client.move_to(channel)
+                except Exception as e:
+                    log.error(f"Failed to move to VC for {username}: {e}")
         else:
             try:
                 session.voice_client = await channel.connect(timeout=20.0, reconnect=True)
             except Exception as e:
                 log.error(f"Failed to connect to VC for {username}: {e}")
-                session.is_running = False
-                return
+                # We continue anyway to start chat mirroring
 
         # 2. Extract HLS and Start Playing
-        hls_url = await self._get_hls_url(username)
-        if hls_url:
-            session.hls_url = hls_url
-            try:
-                audio_source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(
-                    hls_url,
-                    before_options="-re -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-                    options="-vn"
-                ))
-                session.voice_client.play(audio_source, after=lambda e: log.info(f"Stream ended for {username}: {e}"))
-            except Exception as e:
-                log.error(f"Failed to play audio for {username}: {e}")
+        if session.voice_client and session.voice_client.is_connected():
+            hls_url = await self._get_hls_url(username)
+            if hls_url:
+                session.hls_url = hls_url
+                try:
+                    audio_source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(
+                        hls_url,
+                        before_options="-re -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+                        options="-vn"
+                    ))
+                    session.voice_client.play(audio_source, after=lambda e: log.info(f"Stream ended for {username}: {e}"))
+                except Exception as e:
+                    log.error(f"Failed to play audio for {username}: {e}")
 
         # 3. Post Announcement & Join Chat
         embed = discord.Embed(
