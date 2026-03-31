@@ -119,7 +119,9 @@ class TikTokLive(commands.Cog):
         pass
 
     @tiktok.command()
-    async def monitor(self, ctx, username: str, voice_channel: discord.VoiceChannel, text_channel: discord.TextChannel):
+    async def monitor(self, ctx, username: str, 
+                      voice_channel: Union[discord.VoiceChannel, discord.StageChannel], 
+                      text_channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread]):
         """Start monitoring a TikTok user and mirror to specific channels."""
         username = username.strip().replace("@", "")
         
