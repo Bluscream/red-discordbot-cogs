@@ -16,7 +16,8 @@ from TikTokLive.events import (
     FollowEvent
 )
 from .session import TikTokLiveSession
-from .utils.formatting import format_event, get_user_avatar, get_nickname
+from .utils.formatting import format_event
+from .utils.metadata import get_user_avatar, get_nickname, get_user_handle
 
 log = logging.getLogger("red.blu.tiktoklive.chat")
 
@@ -67,10 +68,12 @@ class TikTokChatHandler:
                 log_first_event(event)
                 can_embed = get_format_params(session.text_channel)
                 nick = get_nickname(event)
+                handle = get_user_handle(event)
+                display_name = f"{nick} (@{handle})" if handle != "unknown" else nick
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "join", discord.Color.light_grey(), can_embed, 
                                    streamer_name=session.username, is_webhook=is_webhook)
-                await self.message_queue.put((session.text_channel, msg, nick, avatar))
+                await self.message_queue.put((session.text_channel, msg, display_name, avatar))
             except Exception as e:
                 log.error(f"Error in on_join for {session.username}: {e}")
 
@@ -80,10 +83,12 @@ class TikTokChatHandler:
                 log_first_event(event)
                 can_embed = get_format_params(session.text_channel)
                 nick = get_nickname(event)
+                handle = get_user_handle(event)
+                display_name = f"{nick} (@{handle})" if handle != "unknown" else nick
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "comment", discord.Color.blue(), can_embed, 
                                    streamer_name=session.username, is_webhook=is_webhook)
-                await self.message_queue.put((session.text_channel, msg, nick, avatar))
+                await self.message_queue.put((session.text_channel, msg, display_name, avatar))
             except Exception as e:
                 log.error(f"Error in on_comment for {session.username}: {e}")
 
@@ -95,10 +100,12 @@ class TikTokChatHandler:
                     return
                 can_embed = get_format_params(session.text_channel)
                 nick = get_nickname(event)
+                handle = get_user_handle(event)
+                display_name = f"{nick} (@{handle})" if handle != "unknown" else nick
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "gift", discord.Color.purple(), can_embed, 
                                    streamer_name=session.username, is_webhook=is_webhook)
-                await self.message_queue.put((session.text_channel, msg, nick, avatar))
+                await self.message_queue.put((session.text_channel, msg, display_name, avatar))
             except Exception as e:
                 log.error(f"Error in on_gift for {session.username}: {e}")
 
@@ -108,10 +115,12 @@ class TikTokChatHandler:
                 log_first_event(event)
                 can_embed = get_format_params(session.text_channel)
                 nick = get_nickname(event)
+                handle = get_user_handle(event)
+                display_name = f"{nick} (@{handle})" if handle != "unknown" else nick
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "share", discord.Color.gold(), can_embed, 
                                    streamer_name=session.username, is_webhook=is_webhook)
-                await self.message_queue.put((session.text_channel, msg, nick, avatar))
+                await self.message_queue.put((session.text_channel, msg, display_name, avatar))
             except Exception as e:
                 log.error(f"Error in on_share for {session.username}: {e}")
 
@@ -121,10 +130,12 @@ class TikTokChatHandler:
                 log_first_event(event)
                 can_embed = get_format_params(session.text_channel)
                 nick = get_nickname(event)
+                handle = get_user_handle(event)
+                display_name = f"{nick} (@{handle})" if handle != "unknown" else nick
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "follow", discord.Color.teal(), can_embed, 
                                    streamer_name=session.username, is_webhook=is_webhook)
-                await self.message_queue.put((session.text_channel, msg, nick, avatar))
+                await self.message_queue.put((session.text_channel, msg, display_name, avatar))
             except Exception as e:
                 log.error(f"Error in on_follow for {session.username}: {e}")
 
