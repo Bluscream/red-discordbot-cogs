@@ -22,9 +22,23 @@ def format_event(event, event_type: str, color: discord.Color = discord.Color.bl
         content = getattr(event, 'comment', 'No comment provided.')
     elif event_type == "gift":
         icon = "🎁"
-        gift_name = getattr(event.gift, 'name', 'Unknown Gift')
+        # Robust gift info extraction from mGift (found in logs)
+        mgift = getattr(event, 'm_gift', getattr(event, 'mGift', event.gift))
+        gift_name = getattr(mgift, 'name', 'Unknown Gift')
         count = getattr(event, 'repeat_count', 1)
+        diamonds = getattr(mgift, 'diamondCount', getattr(mgift, 'diamond_count', 0))
+        
+        # Gift icon extraction
+        gift_icon = None
+        icon_obj = getattr(mgift, 'icon', None)
+        if icon_obj:
+            urls = getattr(icon_obj, 'm_urls', getattr(icon_obj, 'mUrls', []))
+            if urls: gift_icon = str(urls[0])
+            
         content = f"sent {bold(f'{count}x {gift_name}')}!"
+        if diamonds > 0:
+            content += f" ({diamonds * count} 💎)"
+
     elif event_type == "follow":
         icon = "👤"
         content = "followed the streamer!"
@@ -46,6 +60,10 @@ def format_event(event, event_type: str, color: discord.Color = discord.Color.bl
             timestamp=discord.utils.utcnow()
         )
         embed.set_author(name=nick, url=tiktok_url, icon_url=avatar)
+        
+        if event_type == "gift" and gift_icon:
+            embed.set_thumbnail(url=gift_icon)
+            
         embed.set_footer(text=f"Monitoring @{streamer_name}")
         
         return embed
