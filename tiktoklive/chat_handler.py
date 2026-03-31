@@ -29,9 +29,18 @@ class TikTokChatHandler:
         self._on_stop_callback = None
         self.seen_events = set()
 
-    def setup_client(self, session: TikTokLiveSession, on_stop_callback):
+    def setup_client(self, session: TikTokLiveSession, on_stop_callback, session_id: Optional[str] = None):
         """Initializes the TikTokLiveClient and registers event listeners."""
         client = TikTokLiveClient(unique_id=f"@{session.username}")
+        
+        # Apply Session ID for authentication if available
+        if session_id:
+            try:
+                client.web.set_session(session_id)
+                log.info(f"Authenticated session applied for @{session.username}")
+            except Exception as e:
+                log.error(f"Failed to set session ID for @{session.username}: {e}")
+        
         session.client = client
         self._on_stop_callback = on_stop_callback
         is_webhook = isinstance(session.text_channel, str)
@@ -158,6 +167,22 @@ class TikTokChatHandler:
             await self._on_stop_callback(session)
 
         self.bot.loop.create_task(client.start())
+
+    async def send_room_chat(self, session: TikTokLiveSession, content: str):
+        """Sends a message to the TikTok Live room chat. Requires session ID."""
+        if not session.client:
+            return
+        
+        # TikTok char limit is around 150-200, we'll cap at 180
+        content = (content[:177] + '...') if len(content) > 180 else content
+        
+        try:
+            # Note: TikTokLive client has send_room_chat in its web scope or direct
+            # Based on docs it's client.send_room_chat()
+            await session.client.send_room_chat(content)
+            log.info(f"Sent message to @{session.username} TikTok chat: {content}")
+        except Exception as e:
+            log.error(f"Failed to send TikTok message for @{session.username}: {e}")
 
     async def stop_chat(self, session: TikTokLiveSession):
         """Disconnects the TikTokLiveClient."""

@@ -4,12 +4,17 @@ from TikTokLive import TikTokLiveClient
 import discord
 
 class TikTokLiveSession:
-    def __init__(self, username: str, voice_channel: int, text_channel: Union[int, str]):
+    def __init__(self, username: str, voice_channel: int, text_channel: Union[int, str], discord_channel_id: Optional[int] = None):
         self.username = username
         self.voice_channel = voice_channel
-        self.text_channel = text_channel
+        self.text_channel = text_channel # Can be ID or URL
+        self.discord_channel_id = discord_channel_id
         
         self.client: Optional[TikTokLiveClient] = None
         self.voice_client: Optional[discord.VoiceClient] = None
         self.hls_url: Optional[str] = None
         self.is_monitoring = True
+        
+        # Managed Webhook Tracking
+        self.webhook_id: Optional[int] = None
+        self.is_managed = False

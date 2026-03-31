@@ -20,7 +20,8 @@ class TikTokLive(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=943123456)
         default_global = {
-            "monitored_users": {}
+            "monitored_users": {},
+            "session_id": None
         }
         self.config.register_global(**default_global)
         
@@ -116,20 +117,22 @@ class TikTokLive(commands.Cog):
             # Migration logic for old keys
             v_chan = data.get('voice_channel') or data.get('voice_channel_id')
             t_chan = data.get('text_channel') or data.get('text_channel_id')
+            d_chan = data.get('discord_channel_id') or (t_chan if isinstance(t_chan, int) else None)
             if v_chan and t_chan:
-                await self._start_session(username, v_chan, t_chan)
+                await self._start_session(username, v_chan, t_chan, discord_channel_id=d_chan)
 
-    async def _start_session(self, username: str, voice_channel: int, text_channel: Union[int, str]):
+    async def _start_session(self, username: str, voice_channel: int, text_channel: Union[int, str], discord_channel_id: Optional[int] = None):
         """Initializes both voice and chat monitoring for a user."""
         username = username.strip().replace("@", "")
         if username in self.active_sessions:
             return
 
-        session = TikTokLiveSession(username, voice_channel, text_channel)
+        session_id = await self.config.session_id()
+        session = TikTokLiveSession(username, voice_channel, text_channel, discord_channel_id=discord_channel_id)
         self.active_sessions[username] = session
         
         # 1. Setup Chat Handler
-        self.chat_handler.setup_client(session, self._stop_session)
+        self.chat_handler.setup_client(session, self._stop_session, session_id=session_id)
         
         # 2. Setup Voice Handler
         voice_embed = await self.voice_handler.start_voice(session)
@@ -143,11 +146,34 @@ class TikTokLive(commands.Cog):
             
         log.info(f"Stopping session for {session.username}")
         
-        await self.chat_handler.stop_chat(session)
-        await self.voice_handler.stop_voice(session)
-        
+        # 3. Clean up Managed Webhook
+        if session.is_managed and session.text_channel:
+            try:
+                # text_channel stores the webhook URL in managed mode
+                webhook = discord.Webhook.from_url(session.text_channel, session=getattr(self.bot, "session", None))
+                await webhook.delete(reason=f"TikTok monitor for @{session.username} stopped.")
+                log.info(f"Deleted managed webhook for @{session.username}")
+            except Exception as e:
+                log.error(f"Failed to delete managed webhook for @{session.username}: {e}")
+
         if session.username in self.active_sessions:
             del self.active_sessions[session.username]
+
+    @commands.group()
+    @checks.is_owner()
+    async def tiktokset(self, ctx):
+        """Configure global TikTok settings."""
+        pass
+
+    @tiktokset.command(name="session")
+    async def set_session(self, ctx, session_id: str):
+        """
+        Set the TikTok sessionid cookie for authenticated features (chat bridging).
+        Get this from your browser's cookies while logged into TikTok.
+        """
+        await self.config.session_id.set(session_id)
+        await ctx.message.delete() # Safety: Delete message containing cookie
+        await ctx.send(success("TikTok session ID updated! All new sessions will use this account for bridging."))
 
     @commands.group()
     @checks.admin_or_permissions(manage_guild=True)
@@ -167,23 +193,53 @@ class TikTokLive(commands.Cog):
         
         target_val = text_target
         display_target = ""
+        is_managed = False
+        discord_channel_id = None
         
         if isinstance(text_target, str):
             if not text_target.startswith("https://discord.com/api/webhooks/"):
                 return await ctx.send(error("Invalid Webhook URL. Must start with `https://discord.com/api/webhooks/`"))
             target_val = text_target
-            display_target = "Webhook"
+            display_target = "Custom Webhook"
+            discord_channel_id = ctx.channel.id # Assume current channel for bridge
+        elif isinstance(text_target, (discord.TextChannel, discord.VoiceChannel, discord.Thread)):
+            # Automated Webhook Creation
+            try:
+                # Check permissions
+                if not text_target.permissions_for(ctx.me).manage_webhooks:
+                    return await ctx.send(error(f"I need `Manage Webhooks` permission in {text_target.mention}!"))
+                
+                avatar_bytes = await self.bot.user.display_avatar.read()
+                webhook = await text_target.create_webhook(
+                    name=f"@{username}",
+                    avatar=avatar_bytes,
+                    reason=f"Automated TikTok monitor setup by {ctx.author}"
+                )
+                target_val = webhook.url
+                display_target = f"Managed Webhook in {text_target.mention}"
+                is_managed = True
+                discord_channel_id = text_target.id
+            except discord.HTTPException as e:
+                log.error(f"Failed to create webhook: {e}")
+                return await ctx.send(error(f"Failed to create webhook: {e.text}"))
         else:
             target_val = text_target.id
             display_target = text_target.mention
+            discord_channel_id = text_target.id
 
         async with self.config.monitored_users() as users:
             users[username] = {
                 "voice_channel": voice_channel.id,
-                "text_channel": target_val
+                "text_channel": target_val,
+                "discord_channel_id": discord_channel_id,
+                "is_managed": is_managed
             }
         
-        await self._start_session(username, voice_channel.id, target_val)
+        await self._start_session(username, voice_channel.id, target_val, discord_channel_id=discord_channel_id)
+        if is_managed:
+            # Mark the runtime session as managed too
+            self.active_sessions[username].is_managed = True
+        
         await ctx.send(success(f"Monitoring **@{username}**. Voice: {voice_channel.mention} | Text: {display_target}"))
 
     @tiktok.command()
@@ -213,3 +269,35 @@ class TikTokLive(commands.Cog):
             target_str = "Webhook" if isinstance(target, str) else f"<#{target}>"
             msg += f"- @{user}: {status} (Target: {target_str})\n"
         await ctx.send(msg)
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        """Bridge Discord messages to TikTok if authenticated."""
+        # 1. Broad filters: No bots, webhooks, or empty messages
+        if message.author.bot or message.webhook_id or not message.guild:
+            return
+        
+        # 2. Command/Self filter
+        content = message.clean_content.strip()
+        if not content or content.startswith("!"):
+            return
+        
+        # 3. Rich content filter: No embeds
+        if message.embeds:
+            return
+
+        # Check if message is in a monitored channel target
+        for username, session in self.active_sessions.items():
+            if session.discord_channel_id == message.channel.id:
+                # Found a matching session!
+                # We also need a session_id set globally to bridge
+                session_id = await self.config.session_id()
+                if not session_id:
+                    continue # Silent fallback: No authenticated account
+                
+                # Format: "DiscordUser: Message"
+                # TikTok has a short limit, we'll try to keep it compact
+                author_name = message.author.display_name[:12]
+                bridge_text = f"{author_name}: {content}"
+                
+                await self.chat_handler.send_room_chat(session, bridge_text)
