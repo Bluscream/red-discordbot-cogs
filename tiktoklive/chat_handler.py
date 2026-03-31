@@ -26,6 +26,7 @@ class TikTokChatHandler:
         self.message_queue = message_queue
         # Internal map for session cleanup
         self._on_stop_callback = None
+        self.seen_events = set()
 
     def setup_client(self, session: TikTokLiveSession, on_stop_callback):
         """Initializes the TikTokLiveClient and registers event listeners."""
@@ -43,13 +44,27 @@ class TikTokChatHandler:
                 return perms.embed_links
             return False
 
+        def log_first_event(event):
+            import json
+            ename = type(event).__name__
+            if ename not in self.seen_events:
+                try:
+                    data = getattr(event, "to_dict", lambda: {"error": "no to_dict"})()
+                    min_json = json.dumps(data, separators=(',', ':'))
+                    log.info(f"First {ename} dump: {min_json}")
+                    self.seen_events.add(ename)
+                except Exception as e:
+                    log.error(f"Failed to dump {ename}: {e}")
+
         @client.on(ConnectEvent)
         async def on_connect(event: ConnectEvent):
             log.info(f"✅ Connected to TikTok Live Chat for @{session.username} (Room ID: {client.room_id})")
+            log_first_event(event)
 
         @client.on(JoinEvent)
         async def on_join(event: JoinEvent):
             try:
+                log_first_event(event)
                 can_embed = get_format_params(session.text_channel)
                 nick = get_nickname(event)
                 avatar = get_user_avatar(event)
@@ -62,6 +77,7 @@ class TikTokChatHandler:
         @client.on(CommentEvent)
         async def on_comment(event: CommentEvent):
             try:
+                log_first_event(event)
                 can_embed = get_format_params(session.text_channel)
                 nick = get_nickname(event)
                 avatar = get_user_avatar(event)
@@ -74,6 +90,7 @@ class TikTokChatHandler:
         @client.on(GiftEvent)
         async def on_gift(event: GiftEvent):
             try:
+                log_first_event(event)
                 if event.repeat_end != 1:
                     return
                 can_embed = get_format_params(session.text_channel)
@@ -88,6 +105,7 @@ class TikTokChatHandler:
         @client.on(ShareEvent)
         async def on_share(event: ShareEvent):
             try:
+                log_first_event(event)
                 can_embed = get_format_params(session.text_channel)
                 nick = get_nickname(event)
                 avatar = get_user_avatar(event)
@@ -100,6 +118,7 @@ class TikTokChatHandler:
         @client.on(FollowEvent)
         async def on_follow(event: FollowEvent):
             try:
+                log_first_event(event)
                 can_embed = get_format_params(session.text_channel)
                 nick = get_nickname(event)
                 avatar = get_user_avatar(event)
