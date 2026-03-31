@@ -50,12 +50,25 @@ class TikTokChatHandler:
             ename = type(event).__name__
             if ename not in self.seen_events:
                 try:
-                    data = getattr(event, "to_dict", lambda: {"error": "no to_dict"})()
+                    # Try raw message to_dict first (often more reliable in v6.6.5)
+                    msg = getattr(event, "_message", None)
+                    if msg and hasattr(msg, "to_dict"):
+                        data = msg.to_dict()
+                    else:
+                        data = getattr(event, "to_dict", lambda: {"error": "no to_dict"})()
+                    
                     min_json = json.dumps(data, separators=(',', ':'))
                     log.info(f"First {ename} dump: {min_json}")
                     self.seen_events.add(ename)
                 except Exception as e:
-                    log.error(f"Failed to dump {ename}: {e}")
+                    # Fallback to simple dict if to_dict fails
+                    try:
+                        log.warning(f"to_dict failed for {ename}, using fallback: {e}")
+                        data = {k: str(v) for k, v in vars(event).items() if not k.startswith('_')}
+                        log.info(f"First {ename} fallback: {json.dumps(data)}")
+                        self.seen_events.add(ename)
+                    except:
+                        log.error(f"Failed to dump {ename}: {e}")
 
         @client.on(ConnectEvent)
         async def on_connect(event: ConnectEvent):
