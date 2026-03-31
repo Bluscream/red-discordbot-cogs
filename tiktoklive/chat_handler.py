@@ -46,7 +46,7 @@ class TikTokChatHandler:
         async def on_join(event: JoinEvent):
             try:
                 can_embed = get_format_params(session.text_channel_id)
-                msg = format_event(event, "join", discord.Color.light_grey(), can_embed)
+                msg = format_event(event, "join", discord.Color.light_grey(), can_embed, streamer_name=session.username)
                 await self.message_queue.put((session.text_channel_id, msg))
             except Exception as e:
                 log.error(f"Error in on_join for {session.username}: {e}")
@@ -55,7 +55,7 @@ class TikTokChatHandler:
         async def on_comment(event: CommentEvent):
             try:
                 can_embed = get_format_params(session.text_channel_id)
-                msg = format_event(event, "comment", discord.Color.blue(), can_embed)
+                msg = format_event(event, "comment", discord.Color.blue(), can_embed, streamer_name=session.username)
                 await self.message_queue.put((session.text_channel_id, msg))
             except Exception as e:
                 log.error(f"Error in on_comment for {session.username}: {e}")
@@ -66,7 +66,7 @@ class TikTokChatHandler:
                 if event.repeat_end != 1:
                     return
                 can_embed = get_format_params(session.text_channel_id)
-                msg = format_event(event, "gift", discord.Color.purple(), can_embed)
+                msg = format_event(event, "gift", discord.Color.purple(), can_embed, streamer_name=session.username)
                 await self.message_queue.put((session.text_channel_id, msg))
             except Exception as e:
                 log.error(f"Error in on_gift for {session.username}: {e}")
@@ -75,7 +75,7 @@ class TikTokChatHandler:
         async def on_share(event: ShareEvent):
             try:
                 can_embed = get_format_params(session.text_channel_id)
-                msg = format_event(event, "share", discord.Color.gold(), can_embed)
+                msg = format_event(event, "share", discord.Color.gold(), can_embed, streamer_name=session.username)
                 await self.message_queue.put((session.text_channel_id, msg))
             except Exception as e:
                 log.error(f"Error in on_share for {session.username}: {e}")
@@ -84,7 +84,7 @@ class TikTokChatHandler:
         async def on_follow(event: FollowEvent):
             try:
                 can_embed = get_format_params(session.text_channel_id)
-                msg = format_event(event, "follow", discord.Color.teal(), can_embed)
+                msg = format_event(event, "follow", discord.Color.teal(), can_embed, streamer_name=session.username)
                 await self.message_queue.put((session.text_channel_id, msg))
             except Exception as e:
                 log.error(f"Error in on_follow for {session.username}: {e}")
