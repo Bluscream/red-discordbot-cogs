@@ -27,6 +27,9 @@ class TikTokLive(commands.Cog):
     Monitor TikTok lives and stream them to Discord voice channels.
     """
 
+    __author__ = "Bluscream"
+    __version__ = "1.0.1"
+
     def __init__(self, bot: Red):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=837461920, force_registration=True)
@@ -197,12 +200,11 @@ class TikTokLive(commands.Cog):
                 log.error(f"Fatal error in status monitor: {e}")
                 await asyncio.sleep(60)
 
-    @commands.group(name="tiktok")
+    @commands.group(name="tiktok", invoke_without_command=True)
     @checks.admin_or_permissions(manage_guild=True)
     async def _tiktok(self, ctx: commands.Context):
         """TikTokLive monitoring commands."""
-        if ctx.invoked_subcommand is None:
-            await ctx.send_help()
+        await ctx.send_help(ctx.command)
 
     @_tiktok.command(name="monitor")
     async def _monitor(self, ctx: commands.Context, username: str, voice_channel: discord.VoiceChannel):
