@@ -12,12 +12,10 @@ def get_user_id(event):
                 val = getattr(info, attr, None)
                 if val: return str(val)
     
-    # 2. Try the property but wrap in try-except to catch library-level crashes
-    try:
-        if hasattr(event, 'user') and event.user:
-            return str(getattr(event.user, 'unique_id', 'Unknown'))
-    except:
-        pass
+    # 2. Hard-coded fallbacks for events that might have direct attributes
+    for attr in ['unique_id', 'nickname']:
+        val = getattr(event, attr, None)
+        if val: return str(val)
         
     return "Unknown"
 
@@ -30,11 +28,10 @@ def get_nickname(event):
                 val = getattr(info, attr, None)
                 if val: return str(val)
 
-    try:
-        if hasattr(event, 'user') and event.user:
-            return str(getattr(event.user, 'nickname', 'Unknown'))
-    except:
-        pass
+    # 2. Hard-coded fallbacks
+    for attr in ['nickname', 'username']:
+        val = getattr(event, attr, None)
+        if val: return str(val)
 
     return "Unknown"
 
