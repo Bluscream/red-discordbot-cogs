@@ -51,14 +51,20 @@ class TikTokLive(commands.Cog):
         
         self.active_sessions: Dict[str, TikTokLiveSession] = {}
         self._monitor_task: Optional[asyncio.Task] = None
+        
+        self.message_queue: asyncio.Queue[tuple[int, Union[str, discord.Embed]]] = asyncio.Queue()
+        self._queue_task: Optional[asyncio.Task] = None
 
     async def cog_load(self):
         self._monitor_task = self.bot.loop.create_task(self._status_monitor())
-        log.info("TikTokLive monitoring task started.")
+        self._queue_task = self.bot.loop.create_task(self._message_worker())
+        log.info("TikTokLive monitoring and queue worker started.")
 
     def cog_unload(self):
         if self._monitor_task:
             self._monitor_task.cancel()
+        if self._queue_task:
+            self._queue_task.cancel()
         for username in list(self.active_sessions.keys()):
             session = self.active_sessions.pop(username)
             self.bot.loop.create_task(self._stop_session(session))
@@ -157,7 +163,7 @@ class TikTokLive(commands.Cog):
                 color=discord.Color.red()
             )
             embed.set_footer(text="Streaming audio into voice channel...")
-            await text_channel.send(embed=embed)
+            await self.message_queue.put((session.text_channel_id, embed))
         
         self._setup_chat_client(session)
 
@@ -199,25 +205,21 @@ class TikTokLive(commands.Cog):
             u_id = get_user_id(event)
             nick = get_nickname(event)
             log.info(f"💬 @{session.username} | {u_id}: {event.comment}")
-            channel = self.bot.get_channel(session.text_channel_id)
-            if channel and channel.permissions_for(channel.guild.me).send_messages:
-                try:
-                    clean_msg = discord.utils.escape_mentions(event.comment)
-                    await channel.send(f"💬 **{nick}:** {clean_msg}")
-                except Exception as e:
-                    log.debug(f"Mirror error for @{session.username}: {e}")
+            clean_msg = discord.utils.escape_mentions(event.comment)
+            await self.message_queue.put((
+                session.text_channel_id, 
+                f"💬 **{nick}:** {clean_msg}"
+            ))
 
         @client.on(GiftEvent)
         async def on_gift(event: GiftEvent):
             u_id = get_user_id(event)
             gift_msg = f"🎁 {u_id} sent {event.gift.count}x {event.gift.name}!"
             log.info(f"@{session.username} | {gift_msg}")
-            channel = self.bot.get_channel(session.text_channel_id)
-            if channel and channel.permissions_for(channel.guild.me).send_messages:
-                try:
-                    await channel.send(f"**{gift_msg}**")
-                except Exception as e:
-                    log.debug(f"Gift mirror error for @{session.username}: {e}")
+            await self.message_queue.put((
+                session.text_channel_id, 
+                f"**{gift_msg}**"
+            ))
 
         @client.on(ShareEvent)
         async def on_share(event: ShareEvent):
@@ -235,6 +237,30 @@ class TikTokLive(commands.Cog):
             await self._stop_session(session)
 
         self.bot.loop.create_task(client.start())
+
+    async def _message_worker(self):
+        """Worker that processes the message queue to avoid rate limits."""
+        await self.bot.wait_until_ready()
+        while True:
+            try:
+                chan_id, content = await self.message_queue.get()
+                channel = self.bot.get_channel(chan_id)
+                if channel and channel.permissions_for(channel.guild.me).send_messages:
+                    try:
+                        if isinstance(content, discord.Embed):
+                            await channel.send(embed=content)
+                        else:
+                            await channel.send(content)
+                    except discord.HTTPException as e:
+                        log.error(f"Failed to send queued message to {chan_id}: {e}")
+                
+                self.message_queue.task_done()
+                await asyncio.sleep(1.0) # 1 message per second max
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.error(f"Error in message worker: {e}")
+                await asyncio.sleep(5)
 
     async def _status_monitor(self):
         """Main polling background task."""
