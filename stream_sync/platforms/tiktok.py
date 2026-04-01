@@ -74,8 +74,7 @@ class TikTokPlatform(StreamPlatform):
         @client.on(CommentEvent)
         async def on_comment(event: CommentEvent):
             """Sync TikTok chat to Discord."""
-            log_event(event)
-            self.log.info(f"[TikTok Chat] #{channel_id} | {event.user.nickname}: {event.comment}")
+            self.log.debug(f"[TikTok Event] #{channel_id} | {type(event).__name__}: {json.dumps(event.to_dict() if hasattr(event, 'to_dict') else {'error': 'no to_dict'})}")
             
             await self.action_queue.put({
                 "type": "chat_message",
@@ -127,19 +126,6 @@ class TikTokPlatform(StreamPlatform):
         channel_id = session.channel_id
         
         try:
-            # Diagnostics: Force these to ERROR so they show up in your snippet
-            from redbot.core import Config
-            is_cfg = isinstance(self.config, Config)
-            self.log.info(f"TikTok Config Diagnostics: is_config={is_cfg}, type={type(self.config)}")
-            
-            client = self._setup_client(channel_id, session)
-            
-            # Pull credentials from config
-            session_id = await self.config.tiktok_session_id()
-            tt_target_idc = await self.config.tiktok_tt_target_idc()
-            
-            self.log.info(f"TikTok Credentials Debug: SessionID Length={len(session_id) if session_id else 0}, IDC Length={len(tt_target_idc) if tt_target_idc else 0}")
-            
             if session_id and tt_target_idc:
                 client.web.set_session(session_id, tt_target_idc)
                 authenticated = True
@@ -149,17 +135,19 @@ class TikTokPlatform(StreamPlatform):
             else:
                 self.log.info(f"TikTok monitor starting in Guest Mode for @{channel_id}.")
         except Exception as e:
-            import traceback
             self.log.error(f"TikTok monitor failed to initialize for @{channel_id}: {e}")
-            self.log.error(f"Traceback: {traceback.format_exc()}")
+            self.log.debug(f"Traceback: {traceback.format_exc()}")
             return
 
         authenticated = False
         
         while True:
             try:
-                self.log.info(f"Checking if TikTok user @{channel_id} is live before connecting...")
-                # Attempt 1: Guest (or whatever the client state is)
+                if client.connected:
+                    await asyncio.sleep(60)
+                    continue
+                    
+                self.log.info(f"Checking if TikTok user @{channel_id} is live...")
                 await client.start()
             except UserOfflineError:
                 self.log.info(f"TikTok user @{channel_id} is currently offline. Backing off...")

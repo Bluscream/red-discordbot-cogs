@@ -335,8 +335,8 @@ class StreamSync(commands.Cog):
     @checks.admin_or_permissions(manage_guild=True)
     @discord.app_commands.describe(platform="tiktok, twitch, or youtube", channel_id="Channel ID")
     async def monitor(self, ctx, platform: str, channel_id: str, 
-                      voice_channel: Union[discord.VoiceChannel, discord.StageChannel], 
-                      text_target: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread]):
+                      text_target: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread],
+                      voice_channel: Optional[Union[discord.VoiceChannel, discord.StageChannel]] = None):
         """Monitor a stream. Requires Manage Server."""
         platform = platform.lower()
         if platform not in self.platforms: return await ctx.send(error(f"Unsupported platform."))
@@ -347,19 +347,65 @@ class StreamSync(commands.Cog):
 
         async with self.config.monitored_streams() as streams:
             if platform not in streams: streams[platform] = {}
+            
+            # Check platform defaults if they exist (future-proofing)
+            # For now, we'll just check if there's a voice_channel provided
+            v_enabled = True if voice_channel else False
+            
             streams[platform][channel_id] = {
-                "voice_channel": voice_channel.id,
+                "voice_channel": voice_channel.id if voice_channel else None,
                 "text_channel": webhook_url,
                 "text_channel_id": text_target.id,
                 "is_managed": True,
-                "voice_enabled": True,
+                "voice_enabled": v_enabled,
                 "chat_enabled": True,
                 "last_live": 0
             }
-        await ctx.send(success(f"Monitoring **{channel_id}** on **{platform.capitalize()}**."))
+        
+        msg = f"Monitoring **{channel_id}** on **{platform.capitalize()}**."
+        if not voice_channel:
+            msg += " (Voice bridge disabled by default)."
+        await ctx.send(success(msg))
 
     @monitor.autocomplete("platform")
     async def monitor_platform_ac(self, interaction, current): return await self.platform_autocomplete(interaction, current)
+
+    @streams_cmd.group(name="platform")
+    @checks.admin_or_permissions(manage_guild=True)
+    async def platform_group(self, ctx):
+        """Platform-wide settings and bulk actions."""
+        pass
+
+    @platform_group.command(name="toggle")
+    async def platform_toggle(self, ctx, platform: str, feature: Literal["voice", "chat"]):
+        """Toggle a feature for ALL streams on a platform."""
+        platform = platform.lower()
+        if platform not in self.platforms:
+            return await ctx.send(error(f"Unsupported platform: {platform}"))
+            
+        key = f"{feature}_enabled"
+        async with self.config.monitored_streams() as streams:
+            if platform not in streams:
+                return await ctx.send(error(f"No streams monitored on {platform}."))
+            
+            # 1. Update all existing streams
+            count = 0
+            for cid in streams[platform]:
+                streams[platform][cid][key] = not streams[platform][cid].get(key, True)
+                new_state = streams[platform][cid][key]
+                
+                # Sync with active session if exists
+                session = self.active_sessions.get(platform, {}).get(cid)
+                if session:
+                    setattr(session, key, new_state)
+                count += 1
+            
+            # 2. Set as default for future streams on this platform
+            # We'll use the state of the first updated stream (if any) or invert current default
+            final_state = streams[platform][list(streams[platform].keys())[0]][key] if count > 0 else True
+            
+            status_text = "Enabled" if final_state else "Disabled"
+            await ctx.send(success(f"{status_text} **{feature}** for all **{count}** streams on **{platform.capitalize()}**."))
 
     @streams_cmd.command(name="toggle")
     @checks.admin_or_permissions(manage_guild=True)
