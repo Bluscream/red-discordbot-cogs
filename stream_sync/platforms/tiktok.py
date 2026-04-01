@@ -132,8 +132,10 @@ class TikTokPlatform(StreamPlatform):
         channel_id = session.channel_id
         
         try:
-            # Diagnostics: Check if self.config is actually a Config object
-            self.log.debug(f"TikTok Config Debug: type={type(self.config)} has_get_type={hasattr(self.config, 'get_type')}")
+            # Diagnostics: Force these to ERROR so they show up in your snippet
+            from redbot.core import Config
+            is_cfg = isinstance(self.config, Config)
+            self.log.info(f"TikTok Config Diagnostics: is_config={is_cfg}, type={type(self.config)}")
             
             client = self._setup_client(channel_id, session)
             
@@ -141,14 +143,16 @@ class TikTokPlatform(StreamPlatform):
             session_id = await self.config.tiktok_session_id()
             tt_target_idc = await self.config.tiktok_tt_target_idc()
             
+            self.log.info(f"TikTok Credentials Debug: SessionID Length={len(session_id) if session_id else 0}, IDC Length={len(tt_target_idc) if tt_target_idc else 0}")
+            
             if session_id:
                 client.web.set_session(session_id, tt_target_idc)
                 authenticated = True
                 self.log.info(f"Authenticated TikTok session for @{channel_id}")
         except Exception as e:
-            self.log.error(f"TikTok monitor failed to initialize for @{channel_id}: {e}")
             import traceback
-            self.log.debug(traceback.format_exc())
+            self.log.error(f"TikTok monitor failed to initialize for @{channel_id}: {e}")
+            self.log.error(f"Traceback: {traceback.format_exc()}")
             return
 
         authenticated = False
