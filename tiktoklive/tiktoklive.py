@@ -127,9 +127,9 @@ class TikTokLive(commands.Cog):
         if session.username in self.active_sessions:
             del self.active_sessions[session.username]
 
-    @commands.group(aliases=["tt"])
+    @commands.group(aliases=["ttl"])
     @checks.admin_or_permissions(manage_guild=True)
-    async def tiktok(self, ctx):
+    async def tiktoklive(self, ctx):
         """TikTok Live Mirroring commands."""
         pass
 
