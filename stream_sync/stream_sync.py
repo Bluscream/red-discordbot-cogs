@@ -125,7 +125,8 @@ class StreamSync(commands.Cog):
                             )
                             if data.get("is_managed"): session.is_managed = True
                             self.active_sessions[platform_name][cid] = session
-                            retries[platform_name][cid] = StaggeredRetry(multiplier=1.05)
+                            retry = StaggeredRetry(multiplier=1.05)
+                            retries[platform_name][cid] = retry
                             if platform_name == "tiktok": await handler.start_monitor(session, retry=retry)
 
                         session = self.active_sessions[platform_name][cid]
