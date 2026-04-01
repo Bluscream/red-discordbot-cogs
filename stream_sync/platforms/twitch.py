@@ -22,8 +22,9 @@ class TwitchChatBridge(twitchio.Client):
         """Called by twitchio.Client once logged in."""
         try:
             # Add the user token to the ManagedHTTPClient for EventSub
+            # Using _http directly to avoid property shadowing/visibility issues in v3
             clean_token = self.token.replace("oauth:", "")
-            await self.http.add_token(clean_token, "") # refresh token empty for now
+            await self._http.add_token(clean_token, "") # refresh token empty for now
             
             # Subscribe to chat messages for the target broadcaster using EventSub v3
             from twitchio.eventsub import ChatMessageSubscription
