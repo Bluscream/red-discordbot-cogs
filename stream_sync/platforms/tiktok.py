@@ -97,13 +97,8 @@ class TikTokPlatform(StreamPlatform):
             session.current_viewers = getattr(event, 'total_user', getattr(event, 'viewer_count', 0))
 
         # --- Debug Event Listeners ---
-        @client.on("any") # Some TikTokLive versions use "any"
-        async def on_any_event_alt(event):
-            log_event(event)
-
-        @client.on("event")
-        async def on_any_event(event):
-            log_event(event)
+        # Note: TikTokLive v6.x does NOT support "any" or "event" strings in decorators.
+        # Use log_event inside specific typed handlers instead.
 
         @client.on(LiveEndEvent)
         async def on_live_end(event: LiveEndEvent):
