@@ -140,10 +140,14 @@ class TikTokPlatform(StreamPlatform):
             
             self.log.info(f"TikTok Credentials Debug: SessionID Length={len(session_id) if session_id else 0}, IDC Length={len(tt_target_idc) if tt_target_idc else 0}")
             
-            if session_id:
+            if session_id and tt_target_idc:
                 client.web.set_session(session_id, tt_target_idc)
                 authenticated = True
                 self.log.info(f"Authenticated TikTok session for @{channel_id}")
+            elif session_id:
+                self.log.warning(f"TikTok monitor skipping authentication for @{channel_id} (Missing tt_target_idc). Proceeding in Guest Mode.")
+            else:
+                self.log.info(f"TikTok monitor starting in Guest Mode for @{channel_id}.")
         except Exception as e:
             import traceback
             self.log.error(f"TikTok monitor failed to initialize for @{channel_id}: {e}")
