@@ -93,6 +93,12 @@ class TikTokChatHandler:
                 "type": "message",
                 "payload": {"target": session.text_channel, "content": msg}
             })
+            
+            # Trigger Voice Join (Delayed via Action Queue)
+            await self.action_queue.put({
+                "type": "voice_connect",
+                "payload": {"session": session}
+            })
 
         @client.on(RoomUserSeqEvent)
         async def on_user_count(event: RoomUserSeqEvent):
@@ -235,28 +241,40 @@ class TikTokChatHandler:
                 "payload": {"target": session.text_channel, "content": msg}
             })
             
-            # Delay the stop callback via the queue so pending messages finish sending before the webhook is deleted.
+            # Trigger Voice Leaving (Keep polling active)
             await self.action_queue.put({
-                "type": "callback",
-                "payload": {"func": self._on_stop_callback, "kwargs": {"session": session}}
+                "type": "voice_disconnect",
+                "payload": {"session": session}
             })
 
-        self.bot.loop.create_task(self._start_client_safely(client, session))
+        session.client_task = self.bot.loop.create_task(self._start_client_safely(client, session))
 
     async def _start_client_safely(self, client: TikTokLiveClient, session: TikTokLiveSession):
-        """Starts the client and catches common startup errors (Offline/Not Found)."""
+        """Starts the client and dynamically connects if online, or polls if offline with staggered backoff."""
         from TikTokLive.client.errors import UserOfflineError, UserNotFoundError
-        try:
-            await client.start()
-        except UserOfflineError:
-            log.info(f"User @{session.username} is currently offline. Monitoring in background.")
-        except UserNotFoundError:
-            log.error(f"User @{session.username} was not found. Stopping monitor.")
-            await self._on_stop_callback(session)
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            log.error(f"Unexpected error starting client for @{session.username}: {e}")
+        
+        retry_interval = 60.0
+        
+        while session.is_monitoring:
+            try:
+                await client.start()
+                # If the stream successfully connected and then ended naturally, reset our backoff.
+                retry_interval = 60.0
+            except UserOfflineError:
+                log.info(f"User @{session.username} is currently offline. Retrying in {retry_interval:.0f} seconds...")
+                await asyncio.sleep(retry_interval)
+                retry_interval *= 1.05
+            except UserNotFoundError:
+                log.error(f"User @{session.username} was not found. Stopping monitor.")
+                session.is_monitoring = False
+                await self._on_stop_callback(session)
+                break
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.error(f"Unexpected error starting client for @{session.username}: {e}")
+                await asyncio.sleep(retry_interval)
+                retry_interval *= 1.05
 
     async def send_room_chat(self, session: TikTokLiveSession, content: str):
         """Sends a message to the TikTok Live room chat. Requires session ID."""
@@ -275,11 +293,14 @@ class TikTokChatHandler:
             log.error(f"Failed to send TikTok message for @{session.username}: {e}")
 
     async def stop_chat(self, session: TikTokLiveSession):
-        """Disconnects the TikTokLiveClient."""
+        """Disconnects the TikTokLiveClient and stops background polling tasks."""
+        session.is_monitoring = False
+        if hasattr(session, 'client_task') and session.client_task:
+            session.client_task.cancel()
+        
         if session.client:
             try:
                 await session.client.disconnect()
-                log.info(f"Disconnected TikTok client for {session.username}")
             except Exception as e:
-                log.error(f"Error disconnecting TikTok client for {session.username}: {e}")
+                log.error(f"Error disconnecting client for {session.username}: {e}")
             session.client = None

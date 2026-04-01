@@ -158,6 +158,21 @@ class TikTokLive(commands.Cog):
                                 await func(*args, **kwargs)
                             except Exception as e:
                                 log.error(f"Callback execution error: {e}")
+                                
+                    elif atype == "voice_connect":
+                        session_obj = payload.get("session")
+                        if session_obj and not session_obj.voice_client:
+                            voice_embed = await self.voice_handler.start_voice(session_obj)
+                            if voice_embed and session_obj.text_channel:
+                                await self.action_queue.put({
+                                    "type": "message",
+                                    "payload": {"target": session_obj.text_channel, "content": voice_embed}
+                                })
+                                
+                    elif atype == "voice_disconnect":
+                        session_obj = payload.get("session")
+                        if session_obj:
+                            await self.voice_handler.stop_voice(session_obj)
                     
                 except asyncio.CancelledError:
                     break
@@ -198,13 +213,7 @@ class TikTokLive(commands.Cog):
         # 1. Setup Chat Handler
         self.chat_handler.setup_client(session, self._stop_session, session_id=session_id, tt_target_idc=tt_target_idc)
         
-        # 2. Setup Voice Handler
-        voice_embed = await self.voice_handler.start_voice(session)
-        if voice_embed:
-            await self.action_queue.put({
-                "type": "message",
-                "payload": {"target": text_channel, "content": voice_embed}
-            })
+        # 2. Voice auto-join moves to ConnectEvent triggering "voice_connect"
 
     async def _stop_session(self, session: TikTokLiveSession):
         """Stops both voice and chat components and cleans up resources."""
