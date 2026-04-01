@@ -49,6 +49,7 @@ class YoutubeChatBridge:
                 async for c in chat.get().async_items():
                     if not self._running: break
                     
+                    self.log.info(f"[YouTube Chat] #{self.session.channel_id} | {c.author.name}: {c.message}")
                     await self.platform.action_queue.put({
                         "type": "chat_message",
                         "payload": {

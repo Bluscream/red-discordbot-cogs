@@ -41,7 +41,7 @@ class TwitchChatBridge(twitchio.Client):
 
     async def event_chat_message(self, payload):
         """Standardized message handler for chat synchronization (v3.x)."""
-        # payload is a ChatMessagePayload object
+        self.log.info(f"[Twitch Chat] #{self.session.channel_id} | {payload.chatter.name}: {payload.message.text}")
         if payload.chatter.id == self.bot_id: return
         
         await self.platform.action_queue.put({

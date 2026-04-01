@@ -2,7 +2,7 @@ import asyncio
 import time
 from typing import Optional, Dict, Any
 from TikTokLive import TikTokLiveClient
-from TikTokLive.events import ConnectEvent, LiveEndEvent, DisconnectEvent, RoomUserSeqEvent
+from TikTokLive.events import ConnectEvent, LiveEndEvent, DisconnectEvent, RoomUserSeqEvent, CommentEvent
 from .base import StreamPlatform
 
 class TikTokPlatform(StreamPlatform):
@@ -10,7 +10,6 @@ class TikTokPlatform(StreamPlatform):
         super().__init__(bot, action_queue, config, cog)
         self.clients: Dict[str, TikTokLiveClient] = {}
         self.tasks: Dict[str, asyncio.Task] = {}
-        self.seen_events = set()
 
     async def is_live(self, channel_id: str) -> Dict[str, Any]:
         """
@@ -32,33 +31,30 @@ class TikTokPlatform(StreamPlatform):
         client = TikTokLiveClient(unique_id=f"@{channel_id}")
         self.clients[channel_id] = client
 
-        def log_first_event(event):
+        def log_event(event):
             import json
             ename = type(event).__name__
-            if ename not in self.seen_events:
+            try:
+                # Try raw message to_dict first
+                msg = getattr(event, "_message", None)
+                if msg and hasattr(msg, "to_dict"):
+                    data = msg.to_dict()
+                else:
+                    data = getattr(event, "to_dict", lambda: {"error": "no to_dict"})()
+                
+                min_json = json.dumps(data, separators=(',', ':'))
+                self.log.info(f"[TikTok Event] #{channel_id} | {ename}: {min_json}")
+            except Exception as e:
                 try:
-                    # Try raw message to_dict first
-                    msg = getattr(event, "_message", None)
-                    if msg and hasattr(msg, "to_dict"):
-                        data = msg.to_dict()
-                    else:
-                        data = getattr(event, "to_dict", lambda: {"error": "no to_dict"})()
-                    
-                    min_json = json.dumps(data, separators=(',', ':'))
-                    self.log.info(f"FIRST_EVENT_{ename}: {min_json}")
-                    self.seen_events.add(ename)
-                except Exception as e:
-                    try:
-                        self.log.debug(f"to_dict failed for {ename}, using fallback: {e}")
-                        data = {k: str(v) for k, v in vars(event).items() if not k.startswith('_')}
-                        self.log.info(f"FIRST_EVENT_{ename}_FALLBACK: {json.dumps(data)}")
-                        self.seen_events.add(ename)
-                    except:
-                        self.log.error(f"Failed to dump {ename}: {e}")
+                    self.log.debug(f"to_dict failed for {ename}, using fallback: {e}")
+                    data = {k: str(v) for k, v in vars(event).items() if not k.startswith('_')}
+                    self.log.info(f"[TikTok Event] #{channel_id} | {ename} (Fallback): {json.dumps(data)}")
+                except:
+                    self.log.error(f"Failed to dump {ename}: {e}")
 
         @client.on(ConnectEvent)
         async def on_connect(event: ConnectEvent):
-            log_first_event(event)
+            log_event(event)
             self.log.info(f"TikTok Connect: {channel_id} (Room ID: {client.room_id})")
             if not session.is_live:
                 # Prepare status dict for unified handler
@@ -75,25 +71,43 @@ class TikTokPlatform(StreamPlatform):
             if hasattr(session, 'retry'):
                 session.retry.reset()
 
+        @client.on(CommentEvent)
+        async def on_comment(event: CommentEvent):
+            """Sync TikTok chat to Discord."""
+            log_event(event)
+            self.log.info(f"[TikTok Chat] #{channel_id} | {event.user.nickname}: {event.comment}")
+            
+            await self.action_queue.put({
+                "type": "chat_message",
+                "payload": {
+                    "platform": "tiktok",
+                    "channel_id": channel_id,
+                    "author": event.user.nickname,
+                    "message": event.comment,
+                    "target": session.text_channel,
+                    "session": session
+                }
+            })
+
         @client.on(RoomUserSeqEvent)
         async def on_user_seq(event: RoomUserSeqEvent):
             """Sync viewer count."""
-            log_first_event(event)
+            log_event(event)
             # v6.6.5 uses total_user or viewer_count depending on protocol, total_user is safer
             session.current_viewers = getattr(event, 'total_user', getattr(event, 'viewer_count', 0))
 
         # --- Debug Event Listeners ---
         @client.on("any") # Some TikTokLive versions use "any"
         async def on_any_event_alt(event):
-            log_first_event(event)
+            log_event(event)
 
         @client.on("event")
         async def on_any_event(event):
-            log_first_event(event)
+            log_event(event)
 
         @client.on(LiveEndEvent)
         async def on_live_end(event: LiveEndEvent):
-            log_first_event(event)
+            log_event(event)
             self.log.info(f"TikTok LiveEnd: {channel_id}")
             if session.is_live:
                 await self.cog._handle_go_offline(self.name, channel_id)

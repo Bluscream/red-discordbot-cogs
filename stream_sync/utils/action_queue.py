@@ -47,8 +47,17 @@ class ActionQueue:
                 action = None
                 try:
                     action = await self.queue.get()
-                    atype = action.get("type")
+                    atype = action.get("type", "unknown")
                     payload = action.get("payload", {})
+                    
+                    log.info(f"[ActionQueue] Executing {atype}")
+                    
+                    if atype == "chat_message":
+                        author = payload.get("author", "Unknown")
+                        msg_snippet = str(payload.get("message", ""))[:50]
+                        platform = payload.get("platform", "Unknown")
+                        log.info(f"[ActionQueue] -> Dispatching {platform} msg from {author}: {msg_snippet}...")
+                    
                     allowed = discord.AllowedMentions(everyone=False, roles=False, users=True)
 
                     if atype == "message":
