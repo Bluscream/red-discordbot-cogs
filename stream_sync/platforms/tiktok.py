@@ -128,8 +128,11 @@ class TikTokPlatform(StreamPlatform):
                 # Attempt 1: Guest (or whatever the client state is)
                 await client.start()
             except UserOfflineError:
-                self.log.info(f"TikTok user @{channel_id} is currently offline. Polling again in 60s...")
-                await asyncio.sleep(60)
+                self.log.info(f"TikTok user @{channel_id} is currently offline. Backing off...")
+                if retry:
+                    await retry.sleep()
+                else:
+                    await asyncio.sleep(60)
             except UserNotFoundError:
                 self.log.error(f"TikTok user @{channel_id} not found. Please check the spelling.")
                 break

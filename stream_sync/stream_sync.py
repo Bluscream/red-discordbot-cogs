@@ -39,6 +39,9 @@ class StreamSync(commands.Cog):
             monitored_streams={} # {platform: {id: data}}
         )
         
+        # Configuration Constants
+        self.LIVE_STATUS_CHECK_INTERVAL = 300.0  # 5 minutes for active streams
+        
         # Runtime State
         self.active_sessions: Dict[str, Dict[str, StreamSession]] = {
             "tiktok": {}, "twitch": {}, "youtube": {}
@@ -188,7 +191,11 @@ class StreamSync(commands.Cog):
                         
                         if platform_name in ["twitch", "youtube"]:
                             now = self.bot.loop.time()
-                            if not session.is_live and now < session.last_status_check + retry.current:
+                            
+                            # Decide on current wait interval
+                            interval = retry.current if not session.is_live else self.LIVE_STATUS_CHECK_INTERVAL
+                            
+                            if now < session.last_status_check + interval:
                                 continue
                                 
                             try:
