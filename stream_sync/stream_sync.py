@@ -14,6 +14,7 @@ from .utils.action_queue import ActionQueue
 from .utils.retry import StaggeredRetry
 from .utils.webhooks import delete_webhook_by_url, ensure_webhook
 from .utils.formatting import format_status_embed
+from .utils.normalization import normalize_channel_id
 
 # Import Platforms
 from .platforms.tiktok import TikTokPlatform
@@ -51,9 +52,9 @@ class StreamSync(commands.Cog):
         
         # Platform Instances
         self.platforms = {
-            "tiktok": TikTokPlatform(bot, self.action_queue, self.config),
-            "twitch": TwitchPlatform(bot, self.action_queue, self.config),
-            "youtube": YoutubePlatform(bot, self.action_queue, self.config)
+            "tiktok": TikTokPlatform(bot, self.action_queue, self.config, self),
+            "twitch": TwitchPlatform(bot, self.action_queue, self.config, self),
+            "youtube": YoutubePlatform(bot, self.action_queue, self.config, self)
         }
         
         # Cog-Specific Action Handlers
@@ -98,8 +99,61 @@ class StreamSync(commands.Cog):
         platform = payload.get("platform", "unknown")
         
         if target and author and message:
-            content = f"**{author}**: {message}"
-            await self.action_queue.put({"type": "message", "payload": {"target": target, "content": content}})
+            fmt_msg = f"**[{platform.capitalize()}]** **{author}**: {message}"
+            await self.action_queue.put({"type": "message", "payload": {"target": target, "content": fmt_msg}})
+
+    async def _handle_go_live(self, platform_name: str, cid: str, status: dict):
+        """Unified logic for when a stream goes live."""
+        session = self.active_sessions.get(platform_name, {}).get(cid)
+        if not session: return
+        
+        session.is_live = True
+        handler = self.platforms.get(platform_name)
+        
+        # Reset retry for next offline period
+        async with self.config.monitored_streams() as ms:
+            if platform_name in ms and cid in ms[platform_name]:
+                # We could store more state here if needed
+                pass
+
+        meta = await handler.get_metadata(cid)
+        session.avatar_url = meta.get("avatar_url")
+        
+        if session.chat_enabled:
+            embed = format_status_embed(platform_name, cid, status.get("title", ""), 
+                extra=status.get("extra"), viewers=status.get("viewers", 0),
+                thumbnail_url=status.get("thumbnail"))
+            await self.action_queue.put({"type": "message", "payload": {"target": session.text_channel, "content": embed}})
+            await handler.start_chat(session)
+        
+        if session.voice_enabled:
+            # Fetch the actual HLS URL for audio playback
+            session.hls_url = await handler.get_hls_url(cid)
+            if session.hls_url:
+                await self.action_queue.put({"type": "voice_connect", "payload": {"session": session}})
+            else:
+                log.warning(f"Could not extract HLS URL for {platform_name} @{cid}. Voice bridge skipped.")
+
+    async def _handle_go_offline(self, platform_name: str, cid: str):
+        """Unified logic for when a stream goes offline."""
+        session = self.active_sessions.get(platform_name, {}).get(cid)
+        if not session: return
+        
+        session.is_live = False
+        session.last_live = time.time()
+        handler = self.platforms.get(platform_name)
+
+        # Persist last_live
+        async with self.config.monitored_streams() as ms:
+            if platform_name in ms and cid in ms[platform_name]:
+                ms[platform_name][cid]["last_live"] = session.last_live
+                
+        if session.chat_enabled:
+            await self.action_queue.put({"type": "message", "payload": {"target": session.text_channel, "content": f"⚫ **{cid}** is now offline on {platform_name.capitalize()}."}})
+            await handler.stop_chat(cid)
+        
+        if session.voice_enabled:
+            await self.action_queue.put({"type": "voice_disconnect", "payload": {"session": session}})
 
     async def _main_monitor_loop(self):
         """Unified background polling for all platforms."""
@@ -155,33 +209,10 @@ class StreamSync(commands.Cog):
                             if status.get("live"):
                                 session.current_viewers = status.get("viewers", 0)
                                 if not session.is_live:
-                                    session.is_live = True
-                                    # retry.reset() # Already handled above
-                                    meta = await handler.get_metadata(cid)
-                                    session.avatar_url = meta.get("avatar_url")
-                                    
-                                    if session.chat_enabled:
-                                        embed = format_status_embed(platform_name, cid, status.get("title", ""), 
-                                            extra=status.get("extra"), viewers=status.get("viewers", 0),
-                                            thumbnail_url=status.get("thumbnail"))
-                                        await self.action_queue.put({"type": "message", "payload": {"target": session.text_channel, "content": embed}})
-                                        await handler.start_chat(session)
-                                    
-                                    if session.voice_enabled:
-                                        await self.action_queue.put({"type": "voice_connect", "payload": {"session": session}})
+                                    await self._handle_go_live(platform_name, cid, status)
                             else:
                                 if session.is_live:
-                                    session.is_live = False
-                                    session.last_live = time.time()
-                                    # Persist last_live
-                                    async with self.config.monitored_streams() as ms:
-                                        if platform_name in ms and cid in ms[platform_name]:
-                                            ms[platform_name][cid]["last_live"] = session.last_live
-                                            
-                                    if session.chat_enabled:
-                                        await self.action_queue.put({"type": "message", "payload": {"target": session.text_channel, "content": f"⚫ **{cid}** is now offline on {platform_name.capitalize()}."}})
-                                        await handler.stop_chat(cid)
-                                    if session.voice_enabled: await self.action_queue.put({"type": "voice_disconnect", "payload": {"session": session}})
+                                    await self._handle_go_offline(platform_name, cid)
                                 
                                 retry.failures += 1
                                 retry.current = min(retry.current * retry.multiplier, retry.max_val)
@@ -251,7 +282,7 @@ class StreamSync(commands.Cog):
         platform = platform.lower()
         if platform not in self.platforms: return await ctx.send(error(f"Unsupported platform."))
         
-        channel_id = channel_id.strip()
+        channel_id = normalize_channel_id(platform, channel_id)
         webhook_url = await ensure_webhook(text_target, name=f"@{channel_id}")
         if not webhook_url: return await ctx.send(error("Webhook setup failed."))
 
@@ -276,6 +307,7 @@ class StreamSync(commands.Cog):
     async def toggle(self, ctx, platform: str, channel_id: str, feature: Literal["voice", "chat"]):
         """Toggle features for a streamer. Requires Manage Server."""
         platform = platform.lower()
+        channel_id = normalize_channel_id(platform, channel_id)
         async with self.config.monitored_streams() as streams:
             if platform not in streams or channel_id not in streams[platform]: return await ctx.send(error("Channel not found."))
             new_val = not streams[platform][channel_id].get(f"{feature}_enabled", True)
@@ -292,6 +324,7 @@ class StreamSync(commands.Cog):
     async def stop(self, ctx, platform: str, channel_id: str):
         """Stop monitoring a stream. Requires Manage Server."""
         platform = platform.lower()
+        channel_id = normalize_channel_id(platform, channel_id)
         async with self.config.monitored_streams() as streams:
             if platform in streams and channel_id in streams[platform]:
                 if platform in self.active_sessions and channel_id in self.active_sessions[platform]:

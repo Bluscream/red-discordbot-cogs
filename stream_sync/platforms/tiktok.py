@@ -6,8 +6,8 @@ from TikTokLive.events import ConnectEvent, LiveEndEvent, DisconnectEvent, RoomU
 from .base import StreamPlatform
 
 class TikTokPlatform(StreamPlatform):
-    def __init__(self, bot, action_queue, config):
-        super().__init__(bot, action_queue, config)
+    def __init__(self, bot, action_queue, config, cog):
+        super().__init__(bot, action_queue, config, cog)
         self.clients: Dict[str, TikTokLiveClient] = {}
         self.tasks: Dict[str, asyncio.Task] = {}
         self.seen_events = set()
@@ -22,8 +22,11 @@ class TikTokPlatform(StreamPlatform):
     async def get_hls_url(self, channel_id: str) -> Optional[str]:
         client = self.clients.get(channel_id)
         if client and client.room_info:
-            return client.room_info.get("stream_url", {}).get("hls_pull_url")
-        return None
+            hls = client.room_info.get("stream_url", {}).get("hls_pull_url")
+            if hls: return hls
+        
+        # Fallback to yt-dlp if client room_info is missing
+        return await self._get_hls_via_ytdlp(f"https://www.tiktok.com/@{channel_id}/live")
 
     def _setup_client(self, channel_id: str, session: Any):
         client = TikTokLiveClient(unique_id=f"@{channel_id}")
@@ -58,8 +61,15 @@ class TikTokPlatform(StreamPlatform):
             log_first_event(event)
             self.log.info(f"TikTok Connect: {channel_id} (Room ID: {client.room_id})")
             if not session.is_live:
-                session.is_live = True
-                await self.on_live_start(session)
+                # Prepare status dict for unified handler
+                info = client.room_info or {}
+                status = {
+                    "live": True,
+                    "title": info.get("title", "TikTok Live"),
+                    "viewers": info.get("stats", {}).get("viewer_count", 0),
+                    "thumbnail": info.get("owner", {}).get("avatar_large")
+                }
+                await self.cog._handle_go_live(self.name, channel_id, status)
             
             # Reset the backoff on successful connection
             if hasattr(session, 'retry'):
@@ -73,6 +83,10 @@ class TikTokPlatform(StreamPlatform):
             session.current_viewers = getattr(event, 'total_user', getattr(event, 'viewer_count', 0))
 
         # --- Debug Event Listeners ---
+        @client.on("any") # Some TikTokLive versions use "any"
+        async def on_any_event_alt(event):
+            log_first_event(event)
+
         @client.on("event")
         async def on_any_event(event):
             log_first_event(event)
@@ -81,12 +95,8 @@ class TikTokPlatform(StreamPlatform):
         async def on_live_end(event: LiveEndEvent):
             log_first_event(event)
             self.log.info(f"TikTok LiveEnd: {channel_id}")
-            session.is_live = False
-            session.last_live = time.time()
-            async with self.config.monitored_streams() as ms:
-                if "tiktok" in ms and channel_id in ms["tiktok"]:
-                    ms["tiktok"][channel_id]["last_live"] = session.last_live
-            await self.on_live_end(session)
+            if session.is_live:
+                await self.cog._handle_go_offline(self.name, channel_id)
 
         @client.on(DisconnectEvent)
         async def on_disconnect(event: DisconnectEvent):
@@ -118,19 +128,20 @@ class TikTokPlatform(StreamPlatform):
                 # Attempt 1: Guest (or whatever the client state is)
                 await client.start()
             except UserOfflineError:
-                self.log.debug(f"TikTok user @{channel_id} is offline. Polling...")
+                self.log.info(f"TikTok user @{channel_id} is currently offline. Polling again in 60s...")
                 await asyncio.sleep(60)
             except UserNotFoundError:
-                self.log.error(f"TikTok user @{channel_id} not found. Stopping monitor.")
+                self.log.error(f"TikTok user @{channel_id} not found. Please check the spelling.")
                 break
             except asyncio.CancelledError:
                 self.log.info(f"TikTok monitor task for @{channel_id} cancelled.")
                 break
             except Exception as e:
                 err_str = str(e)
+                self.log.error(f"TikTok connection error for @{channel_id}: {err_str}")
                 # If we're not authenticated yet and we hit a block/error that looks like it needs auth
-                if not authenticated and session_id and ("BLOCK" in err_str or "AUTHENTICATED" in err_str or "SIGN_SERVER" in err_str):
-                    self.log.warning(f"TikTok guest connection blocked for @{channel_id}. Retrying with authentication...")
+                if not authenticated and session_id and ("BLOCK" in err_str or "AUTHENTICATED" in err_str or "SIGN_SERVER" in err_str or "room_id" in err_str.lower()):
+                    self.log.warning(f"TikTok guest connection blocked for @{channel_id}. Retrying with session_id...")
                     try:
                         client.web.set_session(session_id, tt_target_idc)
                         authenticated = True
@@ -138,6 +149,7 @@ class TikTokPlatform(StreamPlatform):
                     except Exception as ae:
                         self.log.error(f"Failed to apply TikTok session for @{channel_id}: {ae}")
                 
+                # Standard staggered backoff for other errors
                 self.log.error(f"Unexpected TikTok error for @{channel_id}: {e}")
                 if hasattr(session, 'retry'):
                     await session.retry.sleep()

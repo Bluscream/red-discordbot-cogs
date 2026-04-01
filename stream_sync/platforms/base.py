@@ -2,16 +2,18 @@ from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
 import logging
 import discord
+import yt_dlp
 from redbot.core.bot import Red
 
 class StreamPlatform(ABC):
     """
     Abstract Base Class for all StreamSync platform providers (TikTok, Twitch, YouTube).
     """
-    def __init__(self, bot: Red, action_queue: Any, config: Any):
+    def __init__(self, bot: Red, action_queue: Any, config: Any, cog: Any):
         self.bot = bot
         self.action_queue = action_queue
         self.config = config
+        self.cog = cog
         self.name = self.__class__.__name__.replace("Platform", "").lower()
         self.log = logging.getLogger(f"red.blu.stream_sync.platforms.{self.name}")
 
@@ -27,6 +29,30 @@ class StreamPlatform(ABC):
     async def get_hls_url(self, channel_id: str) -> Optional[str]:
         """Retrieve the current HLS (.m3u8) stream URL for audio playback."""
         pass
+        
+    async def _get_hls_via_ytdlp(self, url: str) -> Optional[str]:
+        """Shared helper to extract the best .m3u8 URL using yt-dlp."""
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'noplaylist': True,
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': False,
+        }
+        try:
+            # Use run_in_executor since yt-dlp's extract_info is blocking
+            def _extract():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    return ydl.extract_info(url, download=False)
+            
+            info = await self.bot.loop.run_in_executor(None, _extract)
+            if not info: return None
+            
+            # Check for direct manifest URL (m3u8)
+            return info.get('url') or info.get('manifest_url')
+        except Exception as e:
+            self.log.debug(f"yt-dlp extraction failed for {url}: {e}")
+        return None
 
     async def get_metadata(self, channel_id: str) -> Dict[str, Any]:
         """Optional: Fetch additional metadata like avatar_url or category."""

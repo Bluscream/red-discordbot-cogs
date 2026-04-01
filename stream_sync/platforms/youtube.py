@@ -72,8 +72,8 @@ class YoutubeChatBridge:
             self.task.cancel()
 
 class YoutubePlatform(StreamPlatform):
-    def __init__(self, bot, action_queue, config):
-        super().__init__(bot, action_queue, config)
+    def __init__(self, bot, action_queue, config, cog):
+        super().__init__(bot, action_queue, config, cog)
         self.chat_bridges: Dict[str, YoutubeChatBridge] = {}
 
     async def is_live(self, channel_id: str) -> Dict[str, Any]:
@@ -111,11 +111,16 @@ class YoutubePlatform(StreamPlatform):
                     try: voters = viewers_match.group(1).replace(",", "")
                     except: voters = "0"
                 
+                thumbnail = f"https://i.ytimg.com/vi/{channel_id}/maxresdefault.jpg"
+                
+                # If we have @handle, we can't easily guess the thumbnail without a video_ID
+                # yt-dlp will help us get the real video_ID and thumbnail later during HLS extraction
+                
                 return {
                     "live": True, 
                     "title": title, 
                     "viewers": int(voters) if voters.isdigit() else 0,
-                    "thumbnail": f"https://i.ytimg.com/vi/{channel_id}/maxresdefault.jpg"
+                    "thumbnail": thumbnail
                 }
                 
         except Exception as e:
@@ -123,9 +128,10 @@ class YoutubePlatform(StreamPlatform):
         return {"live": False}
 
     async def get_hls_url(self, channel_id: str) -> Optional[str]:
+        url = f"https://www.youtube.com/channel/{channel_id}/live"
         if channel_id.startswith("@"):
-            return f"https://www.youtube.com/{channel_id}/live"
-        return f"https://www.youtube.com/channel/{channel_id}/live"
+            url = f"https://www.youtube.com/{channel_id}/live"
+        return await self._get_hls_via_ytdlp(url)
 
     async def start_chat(self, session: Any):
         if session.channel_id not in self.chat_bridges:
