@@ -14,16 +14,22 @@ class TwitchChatBridge(twitchio.Client):
         self.platform = platform
         self.session = session
         self.broadcaster_id = broadcaster_id
+        self.bot_id = bot_id # Store bot_id explicitly
         self.log = platform.log
         self.task: Optional[asyncio.Task] = None
+        self._save_tokens = False # Fix PermissionError: .tio.tokens.json
 
     async def setup_hook(self):
         """Called by twitchio.Client once logged in."""
         try:
+            # Add the user token to the ManagedHTTPClient for EventSub
+            clean_token = self.token.replace("oauth:", "")
+            await self.http.add_token(clean_token, "") # refresh token empty for now
+            
             # Subscribe to chat messages for the target broadcaster using EventSub v3
             from twitchio.eventsub import ChatMessageSubscription
             payload = ChatMessageSubscription(broadcaster_user_id=self.broadcaster_id, user_id=self.bot_id)
-            await self.subscribe_websocket(payload)
+            await self.subscribe_websocket(payload, as_bot=True)
             self.log.info(f"TwitchIO EventSub: Subscribed to chat for {self.session.channel_id} (ID: {self.broadcaster_id})")
         except Exception as e:
             self.log.error(f"TwitchIO subscription error for {self.session.channel_id}: {e}")
