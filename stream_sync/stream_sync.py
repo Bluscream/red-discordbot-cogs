@@ -27,6 +27,7 @@ class StreamSync(commands.Cog):
     """Unify monitoring of TikTok, Twitch, and YouTube Live into one modular cog."""
 
     def __init__(self, bot: Red):
+        log.info("\n" + "="*50 + "\n" + "StreamSync Cog Initializing...".center(50) + "\n" + "="*50)
         self.bot = bot
         self.config = Config.get_conf(self, identifier=928374564, force_registration=True)
         self.config.register_global(
