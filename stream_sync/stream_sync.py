@@ -203,8 +203,9 @@ class StreamSync(commands.Cog):
                     
                     for cid, data in channels.items():
                         if cid not in self.active_sessions[platform_name]:
+                            txt_chan = data.get("text_channel") or data.get("text_channel_id")
                             session = StreamSession(
-                                platform_name, cid, data["voice_channel"], data["text_channel"],
+                                platform_name, cid, data["voice_channel"], txt_chan,
                                 voice_enabled=data.get("voice_enabled", True),
                                 chat_enabled=data.get("chat_enabled", True),
                                 last_live=data.get("last_live", 0)

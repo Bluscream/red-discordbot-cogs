@@ -60,7 +60,7 @@ class TwitchChatBridge(twitchio.Client):
         """Starts the TwitchIO client in a background task."""
         async def _run():
             try:
-                await super().start(token=self.token)
+                await self.start(token=self.token)
             except asyncio.CancelledError:
                 self.log.info(f"TwitchIO: Chat task for {self.session.channel_id} was cancelled.")
             except Exception as e:
