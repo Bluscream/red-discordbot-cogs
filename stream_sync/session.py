@@ -27,3 +27,9 @@ class StreamSession:
         # Background task for this specific session if needed (TikTok uses this)
         self.monitor_task: Optional[Any] = None
         self.last_status_check: float = 0
+        
+        # Redundancy Guards (Identity & Discord alerts)
+        self.last_notified_is_live: Optional[bool] = None
+        self.last_notified_title: Optional[str] = None
+        self.last_notified_game: Optional[str] = None
+        self.last_notified_viewers: int = 0

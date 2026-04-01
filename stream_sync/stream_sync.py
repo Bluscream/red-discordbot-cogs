@@ -129,12 +129,16 @@ class StreamSync(commands.Cog):
                         
                         log.info(f"Automatically cleared dead webhook for {platform} @{cid}")
 
-    async def _handle_go_live(self, platform_name: str, cid: str, status: dict):
+    async def _handle_go_live(self, platform_name: str, cid: str, status: Dict[str, Any]):
         """Unified logic for when a stream goes live."""
         session = self.active_sessions.get(platform_name, {}).get(cid)
-        if not session: return
+        if not session or session.last_notified_is_live is True: return
         
         session.is_live = True
+        session.last_notified_is_live = True
+        session.last_notified_title = status.get("title")
+        session.last_notified_game = status.get("extra")
+        
         handler = self.platforms.get(platform_name)
         
         # Reset retry for next offline period
@@ -164,9 +168,10 @@ class StreamSync(commands.Cog):
     async def _handle_go_offline(self, platform_name: str, cid: str):
         """Unified logic for when a stream goes offline."""
         session = self.active_sessions.get(platform_name, {}).get(cid)
-        if not session: return
+        if not session or session.last_notified_is_live is False: return
         
         session.is_live = False
+        session.last_notified_is_live = False
         session.last_live = time.time()
         handler = self.platforms.get(platform_name)
 
@@ -239,14 +244,14 @@ class StreamSync(commands.Cog):
                             
                             if status.get("live"):
                                 session.current_viewers = status.get("viewers", 0)
-                                if not session.is_live:
+                                # Only notify if status changed OR title/category changed
+                                if not session.last_notified_is_live or \
+                                   status.get("title") != session.last_notified_title or \
+                                   status.get("extra") != session.last_notified_game:
                                     await self._handle_go_live(platform_name, cid, status)
                             else:
-                                if session.is_live:
+                                if session.last_notified_is_live is not False:
                                     await self._handle_go_offline(platform_name, cid)
-                                
-                                retry.failures += 1
-                                retry.current = min(retry.current * retry.multiplier, retry.max_val)
 
                 await asyncio.sleep(10)
             except asyncio.CancelledError: break
