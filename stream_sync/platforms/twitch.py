@@ -9,12 +9,11 @@ class TwitchChatBridge(twitchio.Client):
     """A robust Twitch chat bridge using the TwitchIO library (v3.x EventSub)."""
     def __init__(self, platform, session, token, client_id, client_secret, broadcaster_id, bot_id):
         # We don't pass token here, we pass it to .start()
-        super().__init__(client_id=client_id, client_secret=client_secret)
+        super().__init__(client_id=client_id, client_secret=client_secret, bot_id=bot_id)
         self.token = token
         self.platform = platform
         self.session = session
         self.broadcaster_id = broadcaster_id
-        self.bot_id = bot_id
         self.log = platform.log
         self.task: Optional[asyncio.Task] = None
 
