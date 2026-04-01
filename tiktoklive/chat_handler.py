@@ -263,7 +263,7 @@ class TikTokChatHandler:
             except UserOfflineError:
                 log.info(f"User @{session.username} is currently offline. Retrying in {retry_interval:.0f} seconds...")
                 await asyncio.sleep(retry_interval)
-                retry_interval *= 1.05
+                retry_interval *= 1.1
             except UserNotFoundError:
                 log.error(f"User @{session.username} was not found. Stopping monitor.")
                 session.is_monitoring = False
@@ -274,7 +274,7 @@ class TikTokChatHandler:
             except Exception as e:
                 log.error(f"Unexpected error starting client for @{session.username}: {e}")
                 await asyncio.sleep(retry_interval)
-                retry_interval *= 1.05
+                retry_interval *= 1.1
 
     async def send_room_chat(self, session: TikTokLiveSession, content: str):
         """Sends a message to the TikTok Live room chat. Requires session ID."""
