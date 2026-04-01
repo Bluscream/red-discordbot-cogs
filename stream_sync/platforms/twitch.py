@@ -1,94 +1,51 @@
 import asyncio
 import logging
 import httpx
-import re
-import ssl
+import twitchio
 from typing import Optional, Dict, Any, List
 from .base import StreamPlatform
 
-class TwitchIRCClient:
-    """A lightweight, dependency-free Twitch IRC client for chat synchronization."""
-    def __init__(self, platform, session):
+class TwitchChatBridge(twitchio.Client):
+    """A robust Twitch chat bridge using the TwitchIO library."""
+    def __init__(self, platform, session, token):
+        super().__init__(token=token, initial_channels=[session.channel_id.lower().replace('@', '')])
         self.platform = platform
         self.session = session
         self.log = platform.log
         self.task: Optional[asyncio.Task] = None
-        self.reader: Optional[asyncio.StreamReader] = None
-        self.writer: Optional[asyncio.StreamWriter] = None
-        self._running = False
 
-    async def start(self, nick: str, password: str):
-        self._running = True
-        self.task = asyncio.create_task(self._run_loop(nick, password))
+    async def event_ready(self):
+        self.log.info(f"TwitchIO Bridge Ready: {self.nick} in #{self.session.channel_id}")
+
+    async def event_message(self, message):
+        """Standardized message handler for chat synchronization."""
+        if message.echo: return
+        
+        await self.platform.action_queue.put({
+            "type": "chat_message",
+            "payload": {
+                "platform": "twitch",
+                "channel_id": self.session.channel_id,
+                "author": message.author.name,
+                "message": message.content,
+                "target": self.session.text_channel,
+                "session": self.session
+            }
+        })
+
+    def start(self):
+        self.task = asyncio.create_task(self.connect())
 
     async def stop(self):
-        self._running = False
-        if self.writer:
-            try:
-                self.writer.close()
-                await self.writer.wait_closed()
-            except: pass
-        if self.task:
-            self.task.cancel()
-
-    async def _run_loop(self, nick: str, password: str):
-        channel = f"#{self.session.channel_id.lower().replace('@', '')}"
-        
-        while self._running:
-            try:
-                # Use SSL for security
-                ctx = ssl.create_default_context()
-                self.reader, self.writer = await asyncio.open_connection(
-                    "irc.chat.twitch.tv", 6697, ssl=ctx
-                )
-                
-                # Authenticate
-                self.writer.write(f"PASS {password}\r\n".encode())
-                self.writer.write(f"NICK {nick}\r\n".encode())
-                self.writer.write(f"JOIN {channel}\r\n".encode())
-                await self.writer.drain()
-                
-                self.log.info(f"Connected to Twitch IRC for {channel}")
-                
-                while self._running:
-                    line = await self.reader.readline()
-                    if not line: break
-                    line = line.decode().strip()
-                    
-                    if line.startswith("PING"):
-                        self.writer.write(f"PONG {line.split()[1]}\r\n".encode())
-                        await self.writer.drain()
-                        continue
-                        
-                    # Basic PRIVMSG parsing
-                    # :user!user@user.tmi.twitch.tv PRIVMSG #channel :message
-                    match = re.search(r"^:(\w+)!.*PRIVMSG #\w+ :(.*)$", line)
-                    if match:
-                        user, text = match.groups()
-                        # Push to action queue
-                        await self.platform.action_queue.put({
-                            "type": "chat_message",
-                            "payload": {
-                                "platform": "twitch",
-                                "channel_id": self.session.channel_id,
-                                "author": user,
-                                "message": text,
-                                "target": self.session.text_channel,
-                                "session": self.session
-                            }
-                        })
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                self.log.error(f"Twitch IRC error for {channel}: {e}")
-                await asyncio.sleep(10) # Reconnect backoff
+        await self.close()
+        if self.task: self.task.cancel()
 
 class TwitchPlatform(StreamPlatform):
     def __init__(self, bot, action_queue, config):
         super().__init__(bot, action_queue, config)
         self._auth_token: Optional[str] = None
         self._token_expires: float = 0
-        self.chat_clients: Dict[str, TwitchIRCClient] = {}
+        self.chat_bridges: Dict[str, TwitchChatBridge] = {}
 
     async def _get_auth_token(self) -> Optional[str]:
         now = self.bot.loop.time()
@@ -174,19 +131,18 @@ class TwitchPlatform(StreamPlatform):
         return f"https://www.twitch.tv/{channel_id.lower().replace('@', '')}"
 
     async def start_chat(self, session: Any):
-        nick = await self.config.twitch_irc_nick()
-        password = await self.config.twitch_irc_password()
+        token = await self.config.twitch_irc_password()
         
-        if not nick or not password:
-            self.log.warning("Twitch IRC credentials not set. Chat synchronization disabled.")
+        if not token:
+            self.log.warning("Twitch IRC token (oauth:...) not set. Chat synchronization disabled.")
             return
 
-        if session.channel_id not in self.chat_clients:
-            client = TwitchIRCClient(self, session)
-            self.chat_clients[session.channel_id] = client
-            await client.start(nick, password)
+        if session.channel_id not in self.chat_bridges:
+            bridge = TwitchChatBridge(self, session, token)
+            self.chat_bridges[session.channel_id] = bridge
+            bridge.start()
 
     async def stop_chat(self, channel_id: str):
-        if channel_id in self.chat_clients:
-            await self.chat_clients[channel_id].stop()
-            del self.chat_clients[channel_id]
+        if channel_id in self.chat_bridges:
+            await self.chat_bridges[channel_id].stop()
+            del self.chat_bridges[channel_id]

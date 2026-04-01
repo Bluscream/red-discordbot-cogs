@@ -2,124 +2,79 @@ import asyncio
 import logging
 import httpx
 import re
-import json
-import time
+import pytchat
 from typing import Optional, Dict, Any, List
 from .base import StreamPlatform
 
-class YoutubeChatScraper:
-    """A resilient, dependency-free YouTube Live Chat scraper/sync service."""
+class YoutubeChatBridge:
+    """A robust YouTube live chat bridge using the pytchat library."""
     def __init__(self, platform, session):
         self.platform = platform
         self.session = session
         self.log = platform.log
         self.task: Optional[asyncio.Task] = None
         self._running = False
-        self._continuation: Optional[str] = None
-        self._innertube_key: Optional[str] = None
-        self._cookies = {"CONSENT": "YES+cb.20210420-15-p1.en-GB+FX+634"}
-        self._headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9"
-        }
 
     async def start(self):
         self._running = True
-        self.task = asyncio.create_task(self._run_loop())
+        # Extracts video_id from channel_id or uses channel_id if it's already a video_id
+        # (Though usually we want to find the current live video ID)
+        video_id = await self._find_video_id()
+        if not video_id:
+            self.log.warning(f"Could not find live video ID for YouTube channel {self.session.channel_id}")
+            return
+
+        self.task = asyncio.create_task(self._run_loop(video_id))
+
+    async def _find_video_id(self) -> Optional[str]:
+        """Fetch the channel's live page to extract the current video ID."""
+        url = f"https://www.youtube.com/channel/{self.session.channel_id}/live"
+        if self.session.channel_id.startswith("@"):
+            url = f"https://www.youtube.com/{self.session.channel_id}/live"
+            
+        try:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                r = await client.get(url)
+                if r.status_code == 200:
+                    match = re.search(r'\"videoDetails\":{\"videoId\":\"(.*?)\"', r.text)
+                    if match: return match.group(1)
+        except Exception as e:
+            self.log.error(f"YouTube video ID lookup error: {e}")
+        return None
+
+    async def _run_loop(self, video_id: str):
+        try:
+            chat = pytchat.create(video_id=video_id)
+            while chat.is_alive() and self._running:
+                async for c in chat.get().async_items():
+                    if not self._running: break
+                    
+                    await self.platform.action_queue.put({
+                        "type": "chat_message",
+                        "payload": {
+                            "platform": "youtube",
+                            "channel_id": self.session.channel_id,
+                            "author": c.author.name,
+                            "message": c.message,
+                            "target": self.session.text_channel,
+                            "session": self.session
+                        }
+                    })
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            self.log.error(f"Pytchat error for {video_id}: {e}")
 
     async def stop(self):
         self._running = False
         if self.task:
             self.task.cancel()
 
-    async def _fetch_initial(self) -> bool:
-        """Find the initial continuation token and API key from the video page."""
-        url = self.session.hls_url or f"https://www.youtube.com/{self.session.channel_id}/live"
-        try:
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-                r = await client.get(url, headers=self._headers, cookies=self._cookies)
-                if r.status_code != 200: return False
-                
-                html = r.text
-                
-                # Extract InnerTube API Key
-                key_match = re.search(r'"INNERTUBE_API_KEY":"(.*?)"', html)
-                if key_match: self._innertube_key = key_match.group(1)
-                
-                # Extract Continuation Token
-                cont_match = re.search(r'"continuation":"(.*?)"', html)
-                if cont_match: self._continuation = cont_match.group(1)
-                
-                return bool(self._innertube_key and self._continuation)
-        except Exception as e:
-            self.log.error(f"YouTube chat initial fetch error: {e}")
-        return False
-
-    async def _run_loop(self):
-        if not await self._fetch_initial():
-            self.log.warning(f"Could not initialize YouTube chat for {self.session.channel_id}.")
-            return
-
-        while self._running:
-            try:
-                url = f"https://www.youtube.com/youtubei/v1/live_chat/get_live_chat?key={self._innertube_key}"
-                payload = {
-                    "context": {
-                        "client": {
-                            "clientName": "WEB",
-                            "clientVersion": "2.20210622.10.00"
-                        }
-                    },
-                    "continuation": self._continuation
-                }
-                
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    r = await client.post(url, json=payload, headers=self._headers, cookies=self._cookies)
-                    if r.status_code != 200:
-                        await asyncio.sleep(10)
-                        continue
-                        
-                    data = r.json()
-                    
-                    # Update Continuation for next poll
-                    cont_data = data.get("continuationContents", {}).get("liveChatContinuation", {}).get("continuations", [])
-                    if cont_data:
-                        self._continuation = cont_data[0].get("invalidationContinuationData", {}).get("continuation") or \
-                                            cont_data[0].get("timedContinuationData", {}).get("continuation")
-                    
-                    # Process actions
-                    actions = data.get("continuationContents", {}).get("liveChatContinuation", {}).get("actions", [])
-                    for action in actions:
-                        item = action.get("addChatItemAction", {}).get("item", {}).get("liveChatTextMessageRenderer")
-                        if item:
-                            author = item.get("authorName", {}).get("simpleText", "Unknown")
-                            message_runs = item.get("message", {}).get("runs", [])
-                            message_text = "".join([r.get("text", "") for r in message_runs])
-                            
-                            if message_text:
-                                await self.platform.action_queue.put({
-                                    "type": "chat_message",
-                                    "payload": {
-                                        "platform": "youtube",
-                                        "channel_id": self.session.channel_id,
-                                        "author": author,
-                                        "message": message_text,
-                                        "target": self.session.text_channel,
-                                        "session": self.session
-                                    }
-                                })
-                
-                await asyncio.sleep(5) # Poll every 5s
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                self.log.error(f"YouTube chat poll error: {e}")
-                await asyncio.sleep(15)
-
 class YoutubePlatform(StreamPlatform):
     def __init__(self, bot, action_queue, config):
         super().__init__(bot, action_queue, config)
-        self.chat_scrapers: Dict[str, YoutubeChatScraper] = {}
+        self.chat_bridges: Dict[str, YoutubeChatBridge] = {}
 
     async def is_live(self, channel_id: str) -> Dict[str, Any]:
         url = f"https://www.youtube.com/channel/{channel_id}/live"
@@ -153,16 +108,14 @@ class YoutubePlatform(StreamPlatform):
                 viewers = 0
                 viewers_match = re.search(r'"viewCount":\{"runs":\[\{"text":"([\d,]+)"\}', html)
                 if viewers_match:
-                    try:
-                        viewers = int(viewers_match.group(1).replace(",", ""))
-                    except:
-                        pass
+                    try: voters = viewers_match.group(1).replace(",", "")
+                    except: voters = "0"
                 
                 return {
                     "live": True, 
                     "title": title, 
-                    "viewers": viewers,
-                    "thumbnail": f"https://i.ytimg.com/vi/{channel_id}/maxresdefault.jpg" # Generic guess
+                    "viewers": int(voters) if voters.isdigit() else 0,
+                    "thumbnail": f"https://i.ytimg.com/vi/{channel_id}/maxresdefault.jpg"
                 }
                 
         except Exception as e:
@@ -175,12 +128,12 @@ class YoutubePlatform(StreamPlatform):
         return f"https://www.youtube.com/channel/{channel_id}/live"
 
     async def start_chat(self, session: Any):
-        if session.channel_id not in self.chat_scrapers:
-            scraper = YoutubeChatScraper(self, session)
-            self.chat_scrapers[session.channel_id] = scraper
-            await scraper.start()
+        if session.channel_id not in self.chat_bridges:
+            bridge = YoutubeChatBridge(self, session)
+            self.chat_bridges[session.channel_id] = bridge
+            await bridge.start()
 
     async def stop_chat(self, channel_id: str):
-        if channel_id in self.chat_scrapers:
-            await self.chat_scrapers[channel_id].stop()
-            del self.chat_scrapers[channel_id]
+        if channel_id in self.chat_bridges:
+            await self.chat_bridges[channel_id].stop()
+            del self.chat_bridges[channel_id]

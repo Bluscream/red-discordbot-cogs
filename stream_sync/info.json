@@ -1,0 +1,34 @@
+{
+    "name": "StreamSync",
+    "author": [
+        "Bluscream (bluscream_)"
+    ],
+    "short": "Unify monitoring of TikTok, Twitch, and YouTube Live into one modular cog.",
+    "description": "Automatically monitors live streams across multiple platforms, provides voice bridging, and facilitates real-time chat synchronization using robust community libraries (TwitchIO, pytchat).",
+    "install_msg": "StreamSync cog installed! Use `[p]stream set` to configure your API credentials and `[p]stream monitor` to start bridging.",
+    "tags": [
+        "stream",
+        "live",
+        "monitoring",
+        "voice",
+        "chat",
+        "bridge",
+        "twitch",
+        "youtube",
+        "tiktok"
+    ],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        11,
+        0
+    ],
+    "requirements": [
+        "twitchio",
+        "pytchat",
+        "TikTokLive",
+        "yt-dlp",
+        "pynacl",
+        "httpx"
+    ]
+}
