@@ -33,8 +33,9 @@ class TwitchChatBridge(twitchio.Client):
             }
         })
 
-    def start(self):
-        self.task = asyncio.create_task(self.connect())
+    def run_bridge(self):
+        """Starts the TwitchIO client in a background task."""
+        self.task = asyncio.create_task(super().start())
 
     async def stop(self):
         await self.close()
@@ -142,7 +143,7 @@ class TwitchPlatform(StreamPlatform):
             client_secret = await self.config.twitch_client_secret()
             bridge = TwitchChatBridge(self, session, token, client_id, client_secret)
             self.chat_bridges[session.channel_id] = bridge
-            bridge.start()
+            bridge.run_bridge()
 
     async def stop_chat(self, channel_id: str):
         if channel_id in self.chat_bridges:
