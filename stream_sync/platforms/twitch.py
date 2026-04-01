@@ -58,12 +58,28 @@ class TwitchChatBridge(twitchio.Client):
 
     def run_bridge(self):
         """Starts the TwitchIO client in a background task."""
-        self.task = asyncio.create_task(super().start(token=self.token))
+        async def _run():
+            try:
+                await super().start(token=self.token)
+            except asyncio.CancelledError:
+                self.log.info(f"TwitchIO: Chat task for {self.session.channel_id} was cancelled.")
+            except Exception as e:
+                self.log.error(f"TwitchIO: Chat task for {self.session.channel_id} exited with error: {e}")
+            finally:
+                self.log.info(f"TwitchIO: Chat task for {self.session.channel_id} has terminated.")
+
+        self.task = asyncio.create_task(_run())
 
     async def stop(self):
         # Pass save_tokens=False as a fail-safe to prevent PermissionError on close
         await self.close(save_tokens=False)
-        if self.task: self.task.cancel()
+        if self.task and not self.task.done():
+            self.task.cancel()
+            try:
+                await self.task
+            except asyncio.CancelledError:
+                pass
+        self.task = None
 
 class TwitchPlatform(StreamPlatform):
     def __init__(self, bot, action_queue, config, cog):

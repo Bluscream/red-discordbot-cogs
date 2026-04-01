@@ -46,12 +46,19 @@ class StreamPlatform(ABC):
                     return ydl.extract_info(url, download=False)
             
             info = await self.bot.loop.run_in_executor(None, _extract)
-            if not info: return None
+            if not info: 
+                self.log.warning(f"yt-dlp: No info returned for {url}")
+                return None
             
             # Check for direct manifest URL (m3u8)
-            return info.get('url') or info.get('manifest_url')
+            hls = info.get('url') or info.get('manifest_url')
+            if hls:
+                self.log.info(f"yt-dlp: Found HLS URL for {self.name}: {hls[:50]}...")
+            else:
+                self.log.warning(f"yt-dlp: No HLS URL found in info for {url}")
+            return hls
         except Exception as e:
-            self.log.debug(f"yt-dlp extraction failed for {url}: {e}")
+            self.log.error(f"yt-dlp: Extraction failed for {url}: {e}")
         return None
 
     async def get_metadata(self, channel_id: str) -> Dict[str, Any]:

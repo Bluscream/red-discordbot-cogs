@@ -57,6 +57,10 @@ class ActionQueue:
                         msg_snippet = str(payload.get("message", ""))[:50]
                         platform = payload.get("platform", "Unknown")
                         log.info(f"[ActionQueue] -> Dispatching {platform} msg from {author}: {msg_snippet}...")
+                    elif atype == "message":
+                        target_id = payload.get("target")
+                        msg_snippet = str(payload.get("content", ""))[:50]
+                        log.info(f"[ActionQueue] -> Sending Alert to {target_id}: {msg_snippet}...")
                     
                     allowed = discord.AllowedMentions(everyone=False, roles=False, users=True)
 
