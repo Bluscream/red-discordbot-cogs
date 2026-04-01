@@ -123,11 +123,11 @@ class TikTokVoiceHandler:
                     # 3. Identity & Status Sync
                     await self._set_identity(session, voice_channel.guild)
                     
-                    # Fetch current viewers if available
-                    viewers = getattr(session.client, 'viewer_count', 0)
+                    # Update Voice Channel Status
+                    # viewers = getattr(client, 'viewer_count', 0)
                     await self.action_queue.put({
                         "type": "status",
-                        "payload": {"channel": voice_channel, "text": f"🔴 Live with {viewers} viewers"}
+                        "payload": {"channel": voice_channel, "text": "🔴 Live"}
                     })
 
                     # Notify in text channel

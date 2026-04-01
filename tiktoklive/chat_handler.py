@@ -14,7 +14,7 @@ from TikTokLive.events import (
     GiftEvent,
     ShareEvent,
     FollowEvent,
-    RoomUserCountMessage
+    RoomUserSeqEvent
 )
 from .session import TikTokLiveSession
 from .utils.formatting import format_event, sanitize_mentions, format_status_embed
@@ -88,25 +88,24 @@ class TikTokChatHandler:
             log_first_event(event)
             
             # 🔴 Status Notification: LIVE
-            viewers = getattr(client, 'viewer_count', 0)
-            msg = format_status_embed(session.username, "live", viewers)
+            msg = format_status_embed(session.username, "live", 0)
             await self.action_queue.put({
                 "type": "message",
                 "payload": {"target": session.text_channel, "content": msg}
             })
 
-        @client.on(RoomUserCountMessage)
-        async def on_user_count(event: RoomUserCountMessage):
+        @client.on(RoomUserSeqEvent)
+        async def on_user_count(event: RoomUserSeqEvent):
             """Sync viewer count to Voice Channel Status."""
             if not session.voice_client:
                 return
             
-            viewers = getattr(event, 'user_count', 0)
-            # Push to action queue for throttling and rate limiting
-            await self.action_queue.put({
-                "type": "status",
-                "payload": {"channel": session.voice_client.channel, "text": f"🔴 Live with {viewers} viewers"}
-            })
+            viewers = getattr(event, 'total_user', 0)
+            if viewers > 0:
+                await self.action_queue.put({
+                    "type": "status",
+                    "payload": {"channel": session.voice_client.channel, "text": f"🔴 Live with {viewers} viewers"}
+                })
 
         @client.on(JoinEvent)
         async def on_join(event: JoinEvent):
