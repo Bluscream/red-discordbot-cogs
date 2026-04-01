@@ -32,6 +32,7 @@ class StreamSync(commands.Cog):
             twitch_client_id=None,
             twitch_client_secret=None,
             tiktok_session_id=None,
+            tiktok_tt_target_idc=None,
             twitch_irc_nick=None,
             twitch_irc_password=None,
             monitored_streams={} # {platform: {id: data}}
@@ -341,9 +342,10 @@ class StreamSync(commands.Cog):
         await ctx.send(success("Twitch IRC credentials updated."))
 
     @streamset.command(name="tiktok")
-    async def set_tiktok(self, ctx, session_id: str):
-        """Set TikTok Session ID."""
+    async def set_tiktok(self, ctx, session_id: str, tt_target_idc: str):
+        """Set TikTok Session ID and TT Target IDC."""
         await self.config.tiktok_session_id.set(session_id)
+        await self.config.tiktok_tt_target_idc.set(tt_target_idc)
         try: await ctx.message.delete()
         except: pass
-        await ctx.send(success("TikTok session ID updated."))
+        await ctx.send(success(f"TikTok session credentials updated (IDC: `{tt_target_idc}`)."))
