@@ -4,6 +4,7 @@ import logging
 import yt_dlp
 import discord
 import aiohttp
+from redbot.core.bot import Red
 from .session import TikTokLiveSession
 from .utils.action_queue import ActionQueue
 
