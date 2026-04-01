@@ -86,3 +86,27 @@ def format_event(event, event_type: str, color: discord.Color = discord.Color.bl
         return embed
     else:
         return f"{icon} **{user_link}** {content}"
+
+def format_status_embed(streamer_name: str, event_type: str, viewer_count: int = 0):
+    """Formats a LIVE/OFFLINE status embed."""
+    tiktok_url = f"https://www.tiktok.com/@{streamer_name}/live"
+    
+    if event_type == "live":
+        embed = discord.Embed(
+            title=f"🔴 @{streamer_name} is LIVE!",
+            description=f"Come join the stream! There are currently **{viewer_count}** viewers.",
+            color=discord.Color.red(),
+            url=tiktok_url
+        )
+        embed.add_field(name="Viewers", value=f"👥 {viewer_count}", inline=True)
+    else:
+        embed = discord.Embed(
+            title=f"⚫ @{streamer_name} is now OFFLINE",
+            description="The stream has ended. Stay tuned for the next one!",
+            color=discord.Color.light_grey(),
+            url=tiktok_url
+        )
+        
+    embed.set_footer(text="TikTok Live Mirror")
+    embed.set_thumbnail(url="https://www.edigitalagency.com.au/wp-content/uploads/TikTok-logo-PNG.png") # Generic TikTok logo fallback
+    return embed

@@ -18,3 +18,8 @@ class TikTokLiveSession:
         # Managed Webhook Tracking
         self.webhook_id: Optional[int] = None
         self.is_managed = False
+        
+        # Original Identity & VC State (for revert)
+        self.original_nick: Optional[str] = None
+        self.original_avatar_url: Optional[str] = None # Or bytes
+        self.original_vc_status: Optional[str] = None

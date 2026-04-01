@@ -13,10 +13,11 @@ from TikTokLive.events import (
     JoinEvent,
     GiftEvent,
     ShareEvent,
-    FollowEvent
+    FollowEvent,
+    RoomUserCountMessage
 )
 from .session import TikTokLiveSession
-from .utils.formatting import format_event, sanitize_mentions
+from .utils.formatting import format_event, sanitize_mentions, format_status_embed
 from .utils.metadata import get_user_avatar, get_nickname, get_user_handle
 
 log = logging.getLogger("red.blu.tiktoklive.chat")
@@ -85,6 +86,25 @@ class TikTokChatHandler:
         async def on_connect(event: ConnectEvent):
             log.info(f"✅ Connected to TikTok Live Chat for @{session.username} (Room ID: {client.room_id})")
             log_first_event(event)
+            
+            # 🔴 Status Notification: LIVE
+            viewers = getattr(client, 'viewer_count', 0)
+            msg = format_status_embed(session.username, "live", viewers)
+            await self.message_queue.put((session.text_channel, msg, None, None))
+
+        @client.on(RoomUserCountMessage)
+        async def on_user_count(event: RoomUserCountMessage):
+            """Sync viewer count to Voice Channel Status."""
+            if not session.voice_client:
+                return
+            
+            viewers = getattr(event, 'user_count', 0)
+            try:
+                # Update VC Status
+                await session.voice_client.channel.edit(status=f"🔴 Live with {viewers} viewers")
+            except Exception as e:
+                # Silently fail if no perms or rate limited
+                pass
 
         @client.on(JoinEvent)
         async def on_join(event: JoinEvent):
@@ -163,7 +183,14 @@ class TikTokChatHandler:
             except Exception as e:
                 log.error(f"Error in on_follow for {session.username}: {e}")
 
+        @client.on(LiveEndEvent)
+        async def on_live_end(event: LiveEndEvent):
             log.info(f"Stream ended for {session.username}")
+            
+            # ⚫ Status Notification: OFFLINE
+            msg = format_status_embed(session.username, "offline")
+            await self.message_queue.put((session.text_channel, msg, None, None))
+            
             await self._on_stop_callback(session)
 
         self.bot.loop.create_task(self._start_client_safely(client, session))
