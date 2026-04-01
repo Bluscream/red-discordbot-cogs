@@ -228,6 +228,7 @@ class StreamSync(commands.Cog):
                                 continue
                                 
                             try:
+                                log.info(f"Checking status for {platform_name} @{cid} (Interval: {int(interval)}s)...")
                                 status = await handler.is_live(cid)
                                 session.last_status_check = now
                                 if not status.get("live"):

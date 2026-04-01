@@ -121,6 +121,7 @@ class TikTokPlatform(StreamPlatform):
     async def start_monitor(self, session: Any, retry: Optional[Any] = None):
         """Start the TikTok monitor in a managed background task."""
         if retry: session.retry = retry
+        self.log.info(f"Spawning background monitor for TikTok user @{session.channel_id}...")
         task = asyncio.create_task(self._run_client_safely(session))
         self.tasks[session.channel_id] = task
         session.monitor_task = task # For UI/State tracking
