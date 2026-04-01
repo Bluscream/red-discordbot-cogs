@@ -21,10 +21,16 @@ class TikTokPlatform(StreamPlatform):
     async def get_hls_url(self, channel_id: str) -> Optional[str]:
         client = self.clients.get(channel_id)
         if client and client.room_info:
-            hls = client.room_info.get("stream_url", {}).get("hls_pull_url")
-            if hls: return hls
+            # Try pull URL from room_info
+            # TikTok structure: room_info['stream_url']['hls_pull_url'] or its variations
+            data = client.room_info.get("stream_url", {})
+            hls = data.get("hls_pull_url") or data.get("hls_pull_url_query")
+            if hls: 
+                self.log.info(f"Successfully extracted TikTok HLS URL for @{channel_id}")
+                return hls
         
-        # Fallback to yt-dlp if client room_info is missing
+        # Fallback to yt-dlp
+        self.log.info(f"Falling back to yt-dlp for @{channel_id} HLS extraction...")
         return await self._get_hls_via_ytdlp(f"https://www.tiktok.com/@{channel_id}/live")
 
     def _setup_client(self, channel_id: str, session: Any) -> TikTokLiveClient:
@@ -75,6 +81,7 @@ class TikTokPlatform(StreamPlatform):
         async def on_comment(event: CommentEvent):
             """Sync TikTok chat to Discord."""
             self.log.debug(f"[TikTok Event] #{channel_id} | {type(event).__name__}: {json.dumps(event.to_dict() if hasattr(event, 'to_dict') else {'error': 'no to_dict'})}")
+            self.log.info(f"[TikTok Chat] #{channel_id} | {event.user.nickname}: {event.comment}")
             
             await self.action_queue.put({
                 "type": "chat_message",
@@ -126,6 +133,12 @@ class TikTokPlatform(StreamPlatform):
         channel_id = session.channel_id
         
         try:
+            client = self._setup_client(channel_id, session)
+            
+            # Pull credentials from config
+            session_id = await self.config.tiktok_session_id()
+            tt_target_idc = await self.config.tiktok_tt_target_idc()
+            
             if session_id and tt_target_idc:
                 client.web.set_session(session_id, tt_target_idc)
                 authenticated = True
