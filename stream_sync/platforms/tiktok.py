@@ -130,12 +130,17 @@ class TikTokPlatform(StreamPlatform):
         from TikTokLive.client.errors import UserOfflineError, UserNotFoundError
         
         channel_id = session.channel_id
-        client = self._setup_client(channel_id, session)
         
-        # Pull credentials from config
-        session_id = await self.config.tiktok_session_id()
-        tt_target_idc = await self.config.tiktok_tt_target_idc()
-        
+        try:
+            client = self._setup_client(channel_id, session)
+            
+            # Pull credentials from config
+            session_id = await self.config.tiktok_session_id()
+            tt_target_idc = await self.config.tiktok_tt_target_idc()
+        except Exception as e:
+            self.log.error(f"TikTok monitor failed to initialize for @{channel_id}: {e}")
+            return # Permanent failure for this task instance
+
         authenticated = False
         
         while True:
