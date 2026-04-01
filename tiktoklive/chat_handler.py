@@ -17,6 +17,7 @@ from TikTokLive.events import (
     RoomUserSeqEvent
 )
 from .session import TikTokLiveSession
+from .utils.action_queue import ActionQueue
 from .utils.formatting import format_event, sanitize_mentions, format_status_embed
 from .utils.metadata import get_user_avatar, get_nickname, get_user_handle
 from .utils.retry import StaggeredRetry
@@ -24,7 +25,7 @@ from .utils.retry import StaggeredRetry
 log = logging.getLogger("red.blu.tiktoklive.chat")
 
 class TikTokChatHandler:
-    def __init__(self, bot: Red, action_queue: asyncio.Queue):
+    def __init__(self, bot: Red, action_queue: ActionQueue):
         self.bot = bot
         self.action_queue = action_queue
         # Internal map for session cleanup

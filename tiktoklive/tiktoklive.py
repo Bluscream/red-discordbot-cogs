@@ -11,6 +11,8 @@ from redbot.core.utils.chat_formatting import success, error
 from .session import TikTokLiveSession
 from .voice_handler import TikTokVoiceHandler
 from .chat_handler import TikTokChatHandler
+from .utils.action_queue import ActionQueue
+from .utils.webhooks import delete_webhook_by_url, ensure_webhook
 
 log = logging.getLogger("red.blu.tiktoklive")
 
@@ -30,161 +32,48 @@ class TikTokLive(commands.Cog):
         # Active sessions: {username: TikTokLiveSession}
         self.active_sessions: Dict[str, TikTokLiveSession] = {}
         
-        # Universal Action Queue: (ActionDict)
-        self.action_queue = asyncio.Queue()
-        
-        # Throttling state: {channel_id: last_update_timestamp}
-        self.last_status_update: Dict[int, float] = {}
+        # Universal Action Queue
+        self.action_queue = ActionQueue(self.bot)
         
         # Handlers
-        self.voice_handler = TikTokVoiceHandler(bot, self.action_queue)
         self.chat_handler = TikTokChatHandler(bot, self.action_queue)
+        self.voice_handler = TikTokVoiceHandler(bot, self.action_queue)
+        
+        # Register Cog-Specific Handlers
+        self.action_queue.register_handler("voice_connect", self._handle_voice_connect)
+        self.action_queue.register_handler("voice_disconnect", self._handle_voice_disconnect)
+        self.action_queue.start()
         
         # Worker tasks
-        self.worker_task = None
         self.monitor_task = None
 
     async def cog_load(self):
-        self.worker_task = self.bot.loop.create_task(self._action_worker())
         self.monitor_task = self.bot.loop.create_task(self._start_monitors())
 
-    async def cog_unload(self):
-        if self.worker_task:
-            self.worker_task.cancel()
+    def cog_unload(self):
+        """Cleanup sessions and tasks on unload."""
         if self.monitor_task:
             self.monitor_task.cancel()
         
-        # Explicit clean-up of all active sessions
-        usernames = list(self.active_sessions.keys())
-        for username in usernames:
-            await self._stop_session(self.active_sessions[username])
+        self.bot.loop.create_task(self.action_queue.stop())
+        
+        for session in list(self.active_sessions.values()):
+            self.bot.loop.create_task(self._stop_session(session))
 
-    async def _action_worker(self):
-        """Universal Action Worker. Handles messages, status updates, and identity changes."""
-        log.info("TikTokLive action queue worker started.")
-        # Disallow everyone/roles mentions for safety
-        allowed = discord.AllowedMentions(everyone=False, roles=False, users=True)
-        # Use bot's session if available (Red 3.5+) or create one
-        session = getattr(self.bot, "session", None) or aiohttp.ClientSession()
-        try:
-            while True:
-                try:
-                    action = await self.action_queue.get()
-                    atype = action.get("type", "message")
-                    payload = action.get("payload", {})
-                    
-                    if atype == "message":
-                        # Payload: target, content, nick, avatar
-                        target = payload.get("target")
-                        content = payload.get("content")
-                        nick = payload.get("nick")
-                        avatar = payload.get("avatar")
-                        
-                        if isinstance(target, str) and target.strip().startswith("https://discord.com/api/webhooks/"):
-                            # Webhook Mode
-                            url = target.strip()
-                            try:
-                                webhook = discord.Webhook.from_url(url, session=session)
-                                if isinstance(content, discord.Embed):
-                                    await webhook.send(embed=content, username=nick, avatar_url=avatar, allowed_mentions=allowed)
-                                else:
-                                    await webhook.send(content=content, username=nick, avatar_url=avatar, allowed_mentions=allowed)
-                            except discord.NotFound:
-                                log.error(f"Webhook 404: The webhook URL seems invalid or was deleted. URL start: {url[:55]}...")
-                            except discord.HTTPException as e:
-                                log.error(f"Webhook HTTP error: {e.status} {e.text} (Code: {e.code})")
-                            except Exception as e:
-                                log.error(f"Webhook unexpected error: {e}")
-                        else:
-                            # Standard Channel Mode
-                            try:
-                                chan_id = int(str(target).strip())
-                                channel = self.bot.get_channel(chan_id)
-                                if channel:
-                                    try:
-                                        if isinstance(content, discord.Embed):
-                                            await channel.send(embed=content, allowed_mentions=allowed)
-                                        else:
-                                            await channel.send(content, allowed_mentions=allowed)
-                                    except discord.HTTPException as e:
-                                        log.error(f"HTTPError sending to channel {chan_id}: {e}")
-                                else:
-                                    log.warning(f"Could not find channel {chan_id}")
-                            except ValueError:
-                                log.error(f"Invalid channel target: {target}")
+    async def _handle_voice_connect(self, payload: dict):
+        session = payload.get("session")
+        if session and not session.voice_client:
+            voice_embed = await self.voice_handler.start_voice(session)
+            if voice_embed and session.text_channel:
+                await self.action_queue.put({
+                    "type": "message",
+                    "payload": {"target": session.text_channel, "content": voice_embed}
+                })
 
-                    elif atype == "status":
-                        # Payload: channel, text
-                        channel = payload.get("channel")
-                        text = payload.get("text")
-                        if channel and hasattr(channel, "edit"):
-                            # Throttling: 15 seconds per channel
-                            last_upd = self.last_status_update.get(channel.id, 0)
-                            now = self.bot.loop.time()
-                            if now - last_upd < 15:
-                                # Skip too frequent updates (but always allow 'Offline'?)
-                                # Actually, keep it simple for now and skip.
-                                pass
-                            else:
-                                try:
-                                    await channel.edit(status=text)
-                                    self.last_status_update[channel.id] = now
-                                    log.info(f"Updated VC status for {channel.id}: {text}")
-                                except Exception as e:
-                                    log.warning(f"Failed to set VC status: {e}")
-
-                    elif atype == "identity":
-                        # Payload: guild, nick, avatar_bytes
-                        guild = payload.get("guild")
-                        nick = payload.get("nick")
-                        avatar = payload.get("avatar_bytes")
-                        if guild and guild.me:
-                            try:
-                                params = {}
-                                if nick is not None: params["nick"] = nick[:32]
-                                if avatar is not None: params["avatar"] = avatar
-                                await guild.me.edit(**params)
-                                log.info(f"Updated bot identity in {guild.name}")
-                            except Exception as e:
-                                log.warning(f"Failed to update identity: {e}")
-
-                    elif atype == "callback":
-                        # Payload: func, args, kwargs
-                        func = payload.get("func")
-                        args = payload.get("args", [])
-                        kwargs = payload.get("kwargs", {})
-                        if func:
-                            try:
-                                await func(*args, **kwargs)
-                            except Exception as e:
-                                log.error(f"Callback execution error: {e}")
-                                
-                    elif atype == "voice_connect":
-                        session_obj = payload.get("session")
-                        if session_obj and not session_obj.voice_client:
-                            voice_embed = await self.voice_handler.start_voice(session_obj)
-                            if voice_embed and session_obj.text_channel:
-                                await self.action_queue.put({
-                                    "type": "message",
-                                    "payload": {"target": session_obj.text_channel, "content": voice_embed}
-                                })
-                                
-                    elif atype == "voice_disconnect":
-                        session_obj = payload.get("session")
-                        if session_obj:
-                            await self.voice_handler.stop_voice(session_obj)
-                    
-                except asyncio.CancelledError:
-                    break
-                except Exception as e:
-                    log.error(f"Worker iteration error: {e}")
-                    await asyncio.sleep(5.0)
-                finally:
-                    self.action_queue.task_done()
-                    await asyncio.sleep(0.5) # Rate limit: 0.5s delay between any actions
-        finally:
-            if not hasattr(self.bot, "session") and isinstance(session, aiohttp.ClientSession):
-                await session.close()
+    async def _handle_voice_disconnect(self, payload: dict):
+        session = payload.get("session")
+        if session:
+            await self.voice_handler.stop_voice(session)
 
     async def _start_monitors(self):
         """Starts monitoring for all configured users on load."""
@@ -230,14 +119,10 @@ class TikTokLive(commands.Cog):
         
         # 3. Clean up Managed Webhook
         if session.is_managed and session.text_channel:
-            try:
-                # text_channel stores the webhook URL in managed mode
-                async with aiohttp.ClientSession() as cs:
-                    webhook = discord.Webhook.from_url(session.text_channel, session=cs)
-                    await webhook.delete(reason=f"TikTok monitor for @{session.username} stopped.")
-                log.info(f"Deleted managed webhook for @{session.username}")
-            except Exception as e:
-                log.error(f"Failed to delete managed webhook for @{session.username}: {e}")
+            await delete_webhook_by_url(
+                session.text_channel, 
+                reason=f"TikTok monitor for @{session.username} stopped."
+            )
 
         if session.username in self.active_sessions:
             del self.active_sessions[session.username]
@@ -292,23 +177,17 @@ class TikTokLive(commands.Cog):
         elif isinstance(text_target, (discord.TextChannel, discord.VoiceChannel, discord.Thread)):
             # Automated Webhook Creation
             try:
-                # Check permissions
-                if not text_target.permissions_for(ctx.me).manage_webhooks:
-                    return await ctx.send(error(f"I need `Manage Webhooks` permission in {text_target.mention}!"))
+                webhook_url = await ensure_webhook(text_target, name=f"@{username}")
+                if not webhook_url:
+                    return await ctx.send(error(f"Failed to ensure webhook in {text_target.mention}. Check permissions."))
                 
-                avatar_bytes = await self.bot.user.display_avatar.read()
-                webhook = await text_target.create_webhook(
-                    name=f"@{username}",
-                    avatar=avatar_bytes,
-                    reason=f"Automated TikTok monitor setup by {ctx.author}"
-                )
-                target_val = webhook.url
+                target_val = webhook_url
                 display_target = f"Managed Webhook in {text_target.mention}"
                 is_managed = True
                 discord_channel_id = text_target.id
-            except discord.HTTPException as e:
+            except Exception as e:
                 log.error(f"Failed to create webhook: {e}")
-                return await ctx.send(error(f"Failed to create webhook: {e.text}"))
+                return await ctx.send(error("Failed to create webhook."))
         else:
             target_val = text_target.id
             display_target = text_target.mention

@@ -4,13 +4,13 @@ import logging
 import yt_dlp
 import discord
 import aiohttp
-from redbot.core.bot import Red
 from .session import TikTokLiveSession
+from .utils.action_queue import ActionQueue
 
 log = logging.getLogger("red.blu.tiktoklive.voice")
 
 class TikTokVoiceHandler:
-    def __init__(self, bot: Red, action_queue: asyncio.Queue):
+    def __init__(self, bot: Red, action_queue: ActionQueue):
         self.bot = bot
         self.action_queue = action_queue
 
