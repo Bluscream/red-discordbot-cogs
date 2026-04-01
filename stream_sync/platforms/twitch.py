@@ -7,8 +7,8 @@ from .base import StreamPlatform
 
 class TwitchChatBridge(twitchio.Client):
     """A robust Twitch chat bridge using the TwitchIO library."""
-    def __init__(self, platform, session, token):
-        super().__init__(token=token, initial_channels=[session.channel_id.lower().replace('@', '')])
+    def __init__(self, platform, session, token, client_id, client_secret):
+        super().__init__(token=token, client_id=client_id, client_secret=client_secret, initial_channels=[session.channel_id.lower().replace('@', '')])
         self.platform = platform
         self.session = session
         self.log = platform.log
@@ -138,7 +138,9 @@ class TwitchPlatform(StreamPlatform):
             return
 
         if session.channel_id not in self.chat_bridges:
-            bridge = TwitchChatBridge(self, session, token)
+            client_id = await self.config.twitch_client_id()
+            client_secret = await self.config.twitch_client_secret()
+            bridge = TwitchChatBridge(self, session, token, client_id, client_secret)
             self.chat_bridges[session.channel_id] = bridge
             bridge.start()
 

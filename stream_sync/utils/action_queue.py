@@ -62,6 +62,8 @@ class ActionQueue:
                                     await webhook.send(embed=content, username=nick, avatar_url=avatar, allowed_mentions=allowed)
                                 else:
                                     await webhook.send(content=content, username=nick, avatar_url=avatar, allowed_mentions=allowed)
+                            except discord.NotFound:
+                                log.error(f"Webhook URL is invalid or deleted: {target[:55]}...")
                             except Exception as e:
                                 log.error(f"Webhook error: {e}")
                         else:
