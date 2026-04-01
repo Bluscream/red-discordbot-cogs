@@ -19,6 +19,7 @@ from TikTokLive.events import (
 from .session import TikTokLiveSession
 from .utils.formatting import format_event, sanitize_mentions, format_status_embed
 from .utils.metadata import get_user_avatar, get_nickname, get_user_handle
+from .utils.retry import StaggeredRetry
 
 log = logging.getLogger("red.blu.tiktoklive.chat")
 
@@ -253,17 +254,16 @@ class TikTokChatHandler:
         """Starts the client and dynamically connects if online, or polls if offline with staggered backoff."""
         from TikTokLive.client.errors import UserOfflineError, UserNotFoundError
         
-        retry_interval = 60.0
+        retry = StaggeredRetry(start=60.0, multiplier=1.1, max_val=3600.0)
         
         while session.is_monitoring:
             try:
                 await client.start()
                 # If the stream successfully connected and then ended naturally, reset our backoff.
-                retry_interval = 60.0
+                retry.reset()
             except UserOfflineError:
-                log.info(f"User @{session.username} is currently offline. Retrying in {retry_interval:.0f} seconds...")
-                await asyncio.sleep(retry_interval)
-                retry_interval *= 1.1
+                log.info(f"User @{session.username} is currently offline. Retrying in {retry.current:.0f} seconds...")
+                await retry.sleep()
             except UserNotFoundError:
                 log.error(f"User @{session.username} was not found. Stopping monitor.")
                 session.is_monitoring = False
@@ -273,8 +273,7 @@ class TikTokChatHandler:
                 break
             except Exception as e:
                 log.error(f"Unexpected error starting client for @{session.username}: {e}")
-                await asyncio.sleep(retry_interval)
-                retry_interval *= 1.1
+                await retry.sleep()
 
     async def send_room_chat(self, session: TikTokLiveSession, content: str):
         """Sends a message to the TikTok Live room chat. Requires session ID."""
