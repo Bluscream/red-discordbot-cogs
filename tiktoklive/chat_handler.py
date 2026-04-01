@@ -236,7 +236,11 @@ class TikTokChatHandler:
                 "payload": {"target": session.text_channel, "content": msg}
             })
             
-            await self._on_stop_callback(session)
+            # Delay the stop callback via the queue so pending messages finish sending before the webhook is deleted.
+            await self.action_queue.put({
+                "type": "callback",
+                "payload": {"func": self._on_stop_callback, "kwargs": {"session": session}}
+            })
 
         self.bot.loop.create_task(self._start_client_safely(client, session))
 

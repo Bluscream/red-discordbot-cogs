@@ -213,6 +213,12 @@ class TikTokLive(commands.Cog):
             
         log.info(f"Stopping session for {session.username}")
         
+        # 1. Stop TikTok Web Client
+        await self.chat_handler.stop_chat(session)
+        
+        # 2. Stop Voice Connection
+        await self.voice_handler.stop_voice(session)
+        
         # 3. Clean up Managed Webhook
         if session.is_managed and session.text_channel:
             try:
@@ -226,7 +232,13 @@ class TikTokLive(commands.Cog):
         if session.username in self.active_sessions:
             del self.active_sessions[session.username]
 
-    @commands.group()
+    @commands.group(aliases=["tt"])
+    @checks.admin_or_permissions(manage_guild=True)
+    async def tiktok(self, ctx):
+        """TikTok Live Mirroring commands."""
+        pass
+
+    @tiktok.group(name="set")
     @checks.is_owner()
     async def tiktokset(self, ctx):
         """Configure global TikTok settings."""
@@ -240,14 +252,11 @@ class TikTokLive(commands.Cog):
         """
         await self.config.session_id.set(session_id)
         await self.config.tt_target_idc.set(tt_target_idc)
-        await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except:
+            pass
         await ctx.send(success(f"TikTok session updated (IDC: `{tt_target_idc}`). New sessions will use this for bridging."))
-
-    @commands.group()
-    @checks.admin_or_permissions(manage_guild=True)
-    async def tiktok(self, ctx):
-        """TikTok Live Mirroring commands."""
-        pass
 
     @tiktok.command()
     async def monitor(self, ctx, username: str, 

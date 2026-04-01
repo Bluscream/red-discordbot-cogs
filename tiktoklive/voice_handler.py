@@ -111,6 +111,9 @@ class TikTokVoiceHandler:
                         before_options="-re -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
                         options="-vn"
                     ))
+                    if session.voice_client.is_playing():
+                        session.voice_client.stop()
+                        
                     session.voice_client.play(
                         audio_source, 
                         after=lambda e: log.info(f"Stream ended for {session.username}: {e}")
