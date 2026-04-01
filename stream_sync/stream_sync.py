@@ -268,8 +268,8 @@ class StreamSync(commands.Cog):
     async def platform_autocomplete(self, interaction: discord.Interaction, current: str):
         return [discord.app_commands.Choice(name=p.capitalize(), value=p) for p in self.platforms.keys() if current.lower() in p.lower()]
 
-    @commands.hybrid_group(name="stream", aliases=["streamsync"], invoke_without_command=True)
-    async def stream(self, ctx):
+    @commands.hybrid_group(name="streams", aliases=["streamsync", "ssync"], invoke_without_command=True)
+    async def streams_cmd(self, ctx):
         """StreamSync Commands. Bare use shows active bridges for this channel."""
         if ctx.invoked_subcommand is not None: return
 
@@ -303,7 +303,7 @@ class StreamSync(commands.Cog):
             # embed.set_footer(text="StreamSync Bridge • Real-time Monitoring")
             await ctx.send(embed=embed)
 
-    @stream.command(name="monitor")
+    @streams_cmd.command(name="monitor")
     @checks.admin_or_permissions(manage_guild=True)
     @discord.app_commands.describe(platform="tiktok, twitch, or youtube", channel_id="Channel ID")
     async def monitor(self, ctx, platform: str, channel_id: str, 
@@ -333,7 +333,7 @@ class StreamSync(commands.Cog):
     @monitor.autocomplete("platform")
     async def monitor_platform_ac(self, interaction, current): return await self.platform_autocomplete(interaction, current)
 
-    @stream.command(name="toggle")
+    @streams_cmd.command(name="toggle")
     @checks.admin_or_permissions(manage_guild=True)
     async def toggle(self, ctx, platform: str, channel_id: str, feature: Literal["voice", "chat"]):
         """Toggle features for a streamer. Requires Manage Server."""
@@ -350,7 +350,7 @@ class StreamSync(commands.Cog):
     @toggle.autocomplete("platform")
     async def toggle_platform_ac(self, interaction, current): return await self.platform_autocomplete(interaction, current)
 
-    @stream.command(name="stop")
+    @streams_cmd.command(name="stop")
     @checks.admin_or_permissions(manage_guild=True)
     async def stop(self, ctx, platform: str, channel_id: str):
         """Stop monitoring a stream. Requires Manage Server."""
@@ -367,7 +367,7 @@ class StreamSync(commands.Cog):
     @stop.autocomplete("platform")
     async def stop_platform_ac(self, interaction, current): return await self.platform_autocomplete(interaction, current)
 
-    @stream.command(name="list")
+    @streams_cmd.command(name="list")
     @checks.admin_or_permissions(manage_guild=True)
     async def list(self, ctx):
         """List all monitored streams. Requires Manage Server."""
@@ -379,7 +379,7 @@ class StreamSync(commands.Cog):
             if value: embed.add_field(name=platform.capitalize(), value=value, inline=False)
         await ctx.send(embed=embed)
 
-    @stream.group(name="set")
+    @streams_cmd.group(name="set", aliases=["syncset"])
     @checks.is_owner()
     async def streamset(self, ctx):
         """Configure StreamSync (Owner Only)."""
