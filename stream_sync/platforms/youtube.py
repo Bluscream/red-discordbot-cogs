@@ -87,9 +87,9 @@ class YoutubePlatform(StreamPlatform):
         }
         
         try:
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-                cookies = {"CONSENT": "YES+cb.20210420-15-p1.en-GB+FX+634"}
-                r = await client.get(url, headers=headers, cookies=cookies)
+            cookies = {"CONSENT": "YES+cb.20210420-15-p1.en-GB+FX+634"}
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, cookies=cookies) as client:
+                r = await client.get(url, headers=headers)
                 
                 if r.status_code != 200:
                     return {"live": False}

@@ -64,6 +64,7 @@ class StreamSync(commands.Cog):
         self.action_queue.register_handler("voice_connect", self._handle_voice_connect)
         self.action_queue.register_handler("voice_disconnect", self._handle_voice_disconnect)
         self.action_queue.register_handler("chat_message", self._handle_chat_message)
+        self.action_queue.register_handler("prune_webhook", self._handle_prune_webhook)
         self.action_queue.start()
         
         self.main_loop_task = None
@@ -104,6 +105,29 @@ class StreamSync(commands.Cog):
         if target and author and message:
             fmt_msg = f"**[{platform.capitalize()}]** **{author}**: {message}"
             await self.action_queue.put({"type": "message", "payload": {"target": target, "content": fmt_msg}})
+
+    async def _handle_prune_webhook(self, payload: dict):
+        """Automatic cleanup for deleted webhooks."""
+        url = payload.get("url")
+        if not url: return
+        
+        log.warning(f"Pruning deleted webhook: {url[:55]}...")
+        
+        async with self.config.monitored_streams() as streams:
+            for platform in streams:
+                for cid in list(streams[platform].keys()):
+                    if streams[platform][cid].get("text_channel") == url:
+                        # Clear it in config
+                        streams[platform][cid]["text_channel"] = None
+                        streams[platform][cid]["is_managed"] = False
+                        
+                        # Clear it in active session
+                        session = self.active_sessions.get(platform, {}).get(cid)
+                        if session:
+                            session.text_channel = None
+                            session.is_managed = False
+                        
+                        log.info(f"Automatically cleared dead webhook for {platform} @{cid}")
 
     async def _handle_go_live(self, platform_name: str, cid: str, status: dict):
         """Unified logic for when a stream goes live."""

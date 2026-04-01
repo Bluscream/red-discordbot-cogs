@@ -63,7 +63,8 @@ class ActionQueue:
                                 else:
                                     await webhook.send(content=content, username=nick, avatar_url=avatar, allowed_mentions=allowed)
                             except discord.NotFound:
-                                log.error(f"Webhook URL is invalid or deleted: {target[:55]}...")
+                                log.warning(f"Webhook deleted in Discord. Emitting prune request for: {target[:55]}...")
+                                await self.put({"type": "prune_webhook", "payload": {"url": target}})
                             except Exception as e:
                                 log.error(f"Webhook error: {e}")
                         else:

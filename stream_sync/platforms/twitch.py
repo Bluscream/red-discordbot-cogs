@@ -173,7 +173,9 @@ class TwitchPlatform(StreamPlatform):
                     # Get Bot ID (using the user's token)
                     # We need to validate the token to get the user ID
                     bot_r = await client.get("https://id.twitch.tv/oauth2/validate", headers={"Authorization": f"OAuth {token.replace('oauth:', '')}"})
-                    if bot_r.status_code != 200: raise Exception(f"Invalid Twitch IRC token: {bot_r.text}")
+                    if bot_r.status_code != 200:
+                        self.log.error(f"Twitch token validation failed (401). Please refresh your chatbot token using: [p]streamset twitchchat <nick> <token>")
+                        raise Exception(f"Invalid Twitch chatbot token: {bot_r.text}")
                     bot_id = bot_r.json()["user_id"]
                     
                 bridge = TwitchChatBridge(self, session, token, client_id, client_secret, broadcaster_id, bot_id)
