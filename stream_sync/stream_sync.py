@@ -225,7 +225,7 @@ class StreamSync(commands.Cog):
                 description="\n".join(relevant), 
                 color=discord.Color.green()
             )
-            embed.set_footer(text="StreamSync Bridge • Real-time Monitoring")
+            # embed.set_footer(text="StreamSync Bridge • Real-time Monitoring")
             await ctx.send(embed=embed)
 
     @stream.command(name="monitor")
@@ -239,7 +239,7 @@ class StreamSync(commands.Cog):
         if platform not in self.platforms: return await ctx.send(error(f"Unsupported platform."))
         
         channel_id = channel_id.strip()
-        webhook_url = await ensure_webhook(text_target, name=f"StreamSync Bridge (@{channel_id})")
+        webhook_url = await ensure_webhook(text_target, name=f"@{channel_id}")
         if not webhook_url: return await ctx.send(error("Webhook setup failed."))
 
         async with self.config.monitored_streams() as streams:
