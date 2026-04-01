@@ -60,6 +60,10 @@ class TikTokPlatform(StreamPlatform):
             if not session.is_live:
                 session.is_live = True
                 await self.on_live_start(session)
+            
+            # Reset the backoff on successful connection
+            if hasattr(session, 'retry'):
+                session.retry.reset()
 
         @client.on(RoomUserSeqEvent)
         async def on_user_seq(event: RoomUserSeqEvent):
@@ -90,8 +94,9 @@ class TikTokPlatform(StreamPlatform):
 
         return client
 
-    async def start_monitor(self, session: Any):
+    async def start_monitor(self, session: Any, retry: Optional[Any] = None):
         """Start the TikTok monitor in a managed background task."""
+        if retry: session.retry = retry
         task = asyncio.create_task(self._run_client_safely(session))
         self.tasks[session.channel_id] = task
         session.monitor_task = task # For UI/State tracking
@@ -134,7 +139,10 @@ class TikTokPlatform(StreamPlatform):
                         self.log.error(f"Failed to apply TikTok session for @{channel_id}: {ae}")
                 
                 self.log.error(f"Unexpected TikTok error for @{channel_id}: {e}")
-                await asyncio.sleep(120)
+                if hasattr(session, 'retry'):
+                    await session.retry.sleep()
+                else:
+                    await asyncio.sleep(120)
             
             # If the loop naturally completes (rare for client.start() unless it disconnects)
             # we check if we should still be running.

@@ -126,7 +126,7 @@ class StreamSync(commands.Cog):
                             if data.get("is_managed"): session.is_managed = True
                             self.active_sessions[platform_name][cid] = session
                             retries[platform_name][cid] = StaggeredRetry(multiplier=1.05)
-                            if platform_name == "tiktok": await handler.start_monitor(session)
+                            if platform_name == "tiktok": await handler.start_monitor(session, retry=retry)
 
                         session = self.active_sessions[platform_name][cid]
                         retry = retries[platform_name][cid]
@@ -136,14 +136,26 @@ class StreamSync(commands.Cog):
                             if not session.is_live and now < session.last_status_check + retry.current:
                                 continue
                                 
-                            status = await handler.is_live(cid)
-                            session.last_status_check = now
+                            try:
+                                status = await handler.is_live(cid)
+                                session.last_status_check = now
+                                if not status.get("live"):
+                                    # If offline, slowly increment the polling interval
+                                    retry.failures += 1
+                                    retry.current = min(retry.current * retry.multiplier, retry.max_val)
+                                else:
+                                    # If live, reset the interval for next time
+                                    retry.reset()
+                            except Exception as e:
+                                log.error(f"Error checking status for {platform_name} @{cid}: {e}")
+                                await retry.sleep() # Wait more on actual API errors
+                                continue
                             
                             if status.get("live"):
                                 session.current_viewers = status.get("viewers", 0)
                                 if not session.is_live:
                                     session.is_live = True
-                                    retry.reset()
+                                    # retry.reset() # Already handled above
                                     meta = await handler.get_metadata(cid)
                                     session.avatar_url = meta.get("avatar_url")
                                     
