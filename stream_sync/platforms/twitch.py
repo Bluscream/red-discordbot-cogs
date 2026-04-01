@@ -14,7 +14,6 @@ class TwitchChatBridge(twitchio.Client):
         self.platform = platform
         self.session = session
         self.broadcaster_id = broadcaster_id
-        self.bot_id = bot_id # Store bot_id explicitly
         self.log = platform.log
         self.task: Optional[asyncio.Task] = None
         self._save_tokens = False # Fix PermissionError: .tio.tokens.json
@@ -28,6 +27,7 @@ class TwitchChatBridge(twitchio.Client):
             
             # Subscribe to chat messages for the target broadcaster using EventSub v3
             from twitchio.eventsub import ChatMessageSubscription
+            # self.bot_id is already a property from super()
             payload = ChatMessageSubscription(broadcaster_user_id=self.broadcaster_id, user_id=self.bot_id)
             await self.subscribe_websocket(payload, as_bot=True)
             self.log.info(f"TwitchIO EventSub: Subscribed to chat for {self.session.channel_id} (ID: {self.broadcaster_id})")
@@ -60,7 +60,8 @@ class TwitchChatBridge(twitchio.Client):
         self.task = asyncio.create_task(super().start(token=self.token))
 
     async def stop(self):
-        await self.close()
+        # Pass save_tokens=False as a fail-safe to prevent PermissionError on close
+        await self.close(save_tokens=False)
         if self.task: self.task.cancel()
 
 class TwitchPlatform(StreamPlatform):
