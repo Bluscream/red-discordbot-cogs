@@ -108,7 +108,7 @@ class StreamSync(commands.Cog):
             await self.action_queue.put({"type": "message", "payload": {"target": target, "content": fmt_msg}})
 
     async def _handle_prune_webhook(self, payload: dict):
-        """Automatic cleanup for deleted webhooks."""
+        """Automatic cleanup and self-healing for deleted webhooks."""
         url = payload.get("url")
         if not url: return
         
@@ -117,16 +117,36 @@ class StreamSync(commands.Cog):
         async with self.config.monitored_streams() as streams:
             for platform in streams:
                 for cid in list(streams[platform].keys()):
-                    if streams[platform][cid].get("text_channel") == url:
-                        # Clear it in config
-                        streams[platform][cid]["text_channel"] = None
-                        streams[platform][cid]["is_managed"] = False
+                    data = streams[platform][cid]
+                    if data.get("text_channel") == url:
+                        # Before clearing, check if we should recreate
+                        is_managed = data.get("is_managed", False)
+                        txt_chan_id = data.get("text_channel_id")
                         
-                        # Clear it in active session
+                        # Clear it in config
+                        data["text_channel"] = None
+                        
+                        # Try to find the channel for recreation
+                        channel = self.bot.get_channel(txt_chan_id)
+                        if is_managed and channel:
+                            from .utils.webhooks import ensure_webhook, clear_webhook_cache
+                            clear_webhook_cache(txt_chan_id)
+                            new_url = await ensure_webhook(channel)
+                            if new_url:
+                                data["text_channel"] = new_url
+                                log.info(f"Recreated managed webhook for {platform} @{cid}: {new_url[:55]}...")
+                            else:
+                                data["is_managed"] = False
+                                log.warning(f"Failed to recreate managed webhook for {platform} @{cid}. Reverting to direct messages.")
+                        else:
+                            data["is_managed"] = False
+                            log.info(f"Cleared dead webhook for {platform} @{cid}")
+                        
+                        # Sync to active session
                         session = self.active_sessions.get(platform, {}).get(cid)
                         if session:
-                            session.text_channel = None
-                            session.is_managed = False
+                            session.text_channel = data["text_channel"]
+                            session.is_managed = data["is_managed"]
                         
                         log.info(f"Automatically cleared dead webhook for {platform} @{cid}")
 
