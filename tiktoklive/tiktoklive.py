@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import discord
+import aiohttp
 from typing import Dict, Optional, List, Union
 
 from redbot.core import Config, commands, checks
@@ -61,7 +62,6 @@ class TikTokLive(commands.Cog):
     async def _action_worker(self):
         """Universal Action Worker. Handles messages, status updates, and identity changes."""
         log.info("TikTokLive action queue worker started.")
-        import aiohttp
         # Disallow everyone/roles mentions for safety
         allowed = discord.AllowedMentions(everyone=False, roles=False, users=True)
         # Use bot's session if available (Red 3.5+) or create one
@@ -223,8 +223,9 @@ class TikTokLive(commands.Cog):
         if session.is_managed and session.text_channel:
             try:
                 # text_channel stores the webhook URL in managed mode
-                webhook = discord.Webhook.from_url(session.text_channel, session=getattr(self.bot, "session", None))
-                await webhook.delete(reason=f"TikTok monitor for @{session.username} stopped.")
+                async with aiohttp.ClientSession() as cs:
+                    webhook = discord.Webhook.from_url(session.text_channel, session=cs)
+                    await webhook.delete(reason=f"TikTok monitor for @{session.username} stopped.")
                 log.info(f"Deleted managed webhook for @{session.username}")
             except Exception as e:
                 log.error(f"Failed to delete managed webhook for @{session.username}: {e}")

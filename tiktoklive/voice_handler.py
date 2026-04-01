@@ -4,7 +4,7 @@ import logging
 import yt_dlp
 import discord
 import aiohttp
-from redbot.core import Red
+from redbot.core.bot import Red
 from .session import TikTokLiveSession
 
 log = logging.getLogger("red.blu.tiktoklive.voice")
