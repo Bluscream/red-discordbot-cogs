@@ -27,7 +27,7 @@ class TikTokPlatform(StreamPlatform):
         # Fallback to yt-dlp if client room_info is missing
         return await self._get_hls_via_ytdlp(f"https://www.tiktok.com/@{channel_id}/live")
 
-    def _setup_client(self, channel_id: str, session: Any):
+    def _setup_client(self, channel_id: str, session: Any) -> TikTokLiveClient:
         client = TikTokLiveClient(unique_id=f"@{channel_id}")
         self.clients[channel_id] = client
 
@@ -132,14 +132,24 @@ class TikTokPlatform(StreamPlatform):
         channel_id = session.channel_id
         
         try:
+            # Diagnostics: Check if self.config is actually a Config object
+            self.log.debug(f"TikTok Config Debug: type={type(self.config)} has_get_type={hasattr(self.config, 'get_type')}")
+            
             client = self._setup_client(channel_id, session)
             
             # Pull credentials from config
             session_id = await self.config.tiktok_session_id()
             tt_target_idc = await self.config.tiktok_tt_target_idc()
+            
+            if session_id:
+                client.web.set_session(session_id, tt_target_idc)
+                authenticated = True
+                self.log.info(f"Authenticated TikTok session for @{channel_id}")
         except Exception as e:
             self.log.error(f"TikTok monitor failed to initialize for @{channel_id}: {e}")
-            return # Permanent failure for this task instance
+            import traceback
+            self.log.debug(traceback.format_exc())
+            return
 
         authenticated = False
         
