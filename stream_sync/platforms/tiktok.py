@@ -122,11 +122,11 @@ class TikTokPlatform(StreamPlatform):
         """Start the TikTok monitor in a managed background task."""
         if retry: session.retry = retry
         self.log.info(f"Spawning background monitor for TikTok user @{session.channel_id}...")
-        task = asyncio.create_task(self._run_client_safely(session))
+        task = asyncio.create_task(self._run_client_safely(session, retry))
         self.tasks[session.channel_id] = task
         session.monitor_task = task # For UI/State tracking
 
-    async def _run_client_safely(self, session: Any):
+    async def _run_client_safely(self, session: Any, retry: Optional[Any] = None):
         from TikTokLive.client.errors import UserOfflineError, UserNotFoundError
         
         channel_id = session.channel_id
@@ -140,6 +140,7 @@ class TikTokPlatform(StreamPlatform):
         
         while True:
             try:
+                self.log.info(f"Checking if TikTok user @{channel_id} is live before connecting...")
                 # Attempt 1: Guest (or whatever the client state is)
                 await client.start()
             except UserOfflineError:
