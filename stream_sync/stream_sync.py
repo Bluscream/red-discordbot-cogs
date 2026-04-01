@@ -268,7 +268,7 @@ class StreamSync(commands.Cog):
     async def platform_autocomplete(self, interaction: discord.Interaction, current: str):
         return [discord.app_commands.Choice(name=p.capitalize(), value=p) for p in self.platforms.keys() if current.lower() in p.lower()]
 
-    @commands.hybrid_group(name="streams", aliases=["streamsync", "ssync"], invoke_without_command=True)
+    @commands.hybrid_group(name="streams", invoke_without_command=True)
     async def streams_cmd(self, ctx):
         """StreamSync Commands. Bare use shows active bridges for this channel."""
         if ctx.invoked_subcommand is not None: return
@@ -379,7 +379,7 @@ class StreamSync(commands.Cog):
             if value: embed.add_field(name=platform.capitalize(), value=value, inline=False)
         await ctx.send(embed=embed)
 
-    @streams_cmd.group(name="set", aliases=["syncset"])
+    @streams_cmd.group(name="set")
     @checks.is_owner()
     async def streamset(self, ctx):
         """Configure StreamSync (Owner Only)."""
