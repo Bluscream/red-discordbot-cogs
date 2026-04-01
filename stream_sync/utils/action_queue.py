@@ -165,6 +165,46 @@ class ActionQueue:
                             except Exception as e:
                                 log.error(f"Callback error: {e}")
 
+                    elif atype == "voice_connect":
+                        try:
+                            session_obj = payload.get("session")
+                            vc = session_obj.voice_channel if session_obj else None
+                            if not vc:
+                                log.warning("Voice connect requested but no channel provided.")
+                                continue
+                                
+                            voice_client = self.bot.voice_clients[0] if self.bot.voice_clients else None
+                            
+                            if voice_client:
+                                if voice_client.channel.id != vc.id:
+                                    await voice_client.move_to(vc)
+                                else:
+                                    if voice_client.is_playing():
+                                        voice_client.stop()
+                            else:
+                                voice_client = await vc.connect(timeout=20, reconnect=True)
+                            
+                            hls_url = getattr(session_obj, "hls_url", None)
+                            if hls_url:
+                                log.info(f"Connecting audio for {session_obj.platform} @{session_obj.channel_id}: {hls_url[:50]}...")
+                                if voice_client.is_playing():
+                                    voice_client.stop()
+                                
+                                source = await discord.FFmpegOpusAudio.from_probe(hls_url, 
+                                    before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+                                    options="-vn")
+                                voice_client.play(source)
+                        except Exception as e:
+                            log.error(f"Failed to connect voice: {e}")
+
+                    elif atype == "voice_disconnect":
+                        try:
+                            voice_client = self.bot.voice_clients[0] if self.bot.voice_clients else None
+                            if voice_client:
+                                await voice_client.disconnect(force=True)
+                        except Exception as e:
+                            log.error(f"Failed to disconnect voice: {e}")
+
                     elif atype in self._custom_handlers:
                         try:
                             await self._custom_handlers[atype](payload)

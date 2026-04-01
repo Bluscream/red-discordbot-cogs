@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import json
 import time
 from typing import Optional, Dict, Any
 from TikTokLive import TikTokLiveClient
@@ -175,8 +177,18 @@ class TikTokPlatform(StreamPlatform):
                 self.log.info(f"TikTok monitor task for @{channel_id} cancelled.")
                 break
             except Exception as e:
+                # Handle TikTok-specific blocks gracefully
+                if "DEVICE_BLOCKED" in str(e) or "WebcastBlocked200Error" in type(e).__name__:
+                    self.log.error(f"TikTok WebSocket BLOCKED for @{channel_id}: {e}. Chat mirror will be unavailable. Waiting 5m to cool down...")
+                    await asyncio.sleep(300) # 5 min cool-off
+                else:
+                    self.log.error(f"TikTok client error for @{channel_id}: {e}. Retrying in {retry.current if retry else 120}s...")
+                    if retry:
+                        await retry.sleep()
+                    else:
+                        await asyncio.sleep(120)
+                
                 err_str = str(e)
-                self.log.error(f"TikTok connection error for @{channel_id}: {err_str}")
                 # If we're not authenticated yet and we hit a block/error that looks like it needs auth
                 if not authenticated and session_id and ("BLOCK" in err_str or "AUTHENTICATED" in err_str or "SIGN_SERVER" in err_str or "room_id" in err_str.lower()):
                     self.log.warning(f"TikTok guest connection blocked for @{channel_id}. Retrying with session_id...")
