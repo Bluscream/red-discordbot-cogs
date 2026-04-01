@@ -5,7 +5,6 @@ import yt_dlp
 import discord
 import aiohttp
 from redbot.core import Red
-from redbot.core.utils.chat_formatting import error
 from .session import TikTokLiveSession
 
 log = logging.getLogger("red.blu.tiktoklive.voice")

@@ -101,10 +101,13 @@ class TikTokLive(commands.Cog):
                                 chan_id = int(str(target).strip())
                                 channel = self.bot.get_channel(chan_id)
                                 if channel:
-                                    if isinstance(content, discord.Embed):
-                                        await channel.send(embed=content, allowed_mentions=allowed)
-                                    else:
-                                        await channel.send(content, allowed_mentions=allowed)
+                                    try:
+                                        if isinstance(content, discord.Embed):
+                                            await channel.send(embed=content, allowed_mentions=allowed)
+                                        else:
+                                            await channel.send(content, allowed_mentions=allowed)
+                                    except discord.HTTPException as e:
+                                        log.error(f"HTTPError sending to channel {chan_id}: {e}")
                                 else:
                                     log.warning(f"Could not find channel {chan_id}")
                             except ValueError:
@@ -156,13 +159,14 @@ class TikTokLive(commands.Cog):
                             except Exception as e:
                                 log.error(f"Callback execution error: {e}")
                     
-                    self.action_queue.task_done()
-                    await asyncio.sleep(0.5) # Rate limit: 0.5s delay between any actions
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
                     log.error(f"Worker iteration error: {e}")
                     await asyncio.sleep(5.0)
+                finally:
+                    self.action_queue.task_done()
+                    await asyncio.sleep(0.5) # Rate limit: 0.5s delay between any actions
         finally:
             if not hasattr(self.bot, "session") and isinstance(session, aiohttp.ClientSession):
                 await session.close()
