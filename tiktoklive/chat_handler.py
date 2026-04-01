@@ -23,9 +23,9 @@ from .utils.metadata import get_user_avatar, get_nickname, get_user_handle
 log = logging.getLogger("red.blu.tiktoklive.chat")
 
 class TikTokChatHandler:
-    def __init__(self, bot: Red, message_queue: asyncio.Queue):
+    def __init__(self, bot: Red, action_queue: asyncio.Queue):
         self.bot = bot
-        self.message_queue = message_queue
+        self.action_queue = action_queue
         # Internal map for session cleanup
         self._on_stop_callback = None
         self.seen_events = set()
@@ -90,7 +90,10 @@ class TikTokChatHandler:
             # 🔴 Status Notification: LIVE
             viewers = getattr(client, 'viewer_count', 0)
             msg = format_status_embed(session.username, "live", viewers)
-            await self.message_queue.put((session.text_channel, msg, None, None))
+            await self.action_queue.put({
+                "type": "message",
+                "payload": {"target": session.text_channel, "content": msg}
+            })
 
         @client.on(RoomUserCountMessage)
         async def on_user_count(event: RoomUserCountMessage):
@@ -99,12 +102,11 @@ class TikTokChatHandler:
                 return
             
             viewers = getattr(event, 'user_count', 0)
-            try:
-                # Update VC Status
-                await session.voice_client.channel.edit(status=f"🔴 Live with {viewers} viewers")
-            except Exception as e:
-                # Silently fail if no perms or rate limited
-                pass
+            # Push to action queue for throttling and rate limiting
+            await self.action_queue.put({
+                "type": "status",
+                "payload": {"channel": session.voice_client.channel, "text": f"🔴 Live with {viewers} viewers"}
+            })
 
         @client.on(JoinEvent)
         async def on_join(event: JoinEvent):
@@ -117,7 +119,15 @@ class TikTokChatHandler:
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "join", discord.Color.light_grey(), can_embed, 
                                    streamer_name=session.username, is_webhook=is_webhook)
-                await self.message_queue.put((session.text_channel, msg, display_name, avatar))
+                await self.action_queue.put({
+                    "type": "message",
+                    "payload": {
+                        "target": session.text_channel, 
+                        "content": msg, 
+                        "nick": display_name, 
+                        "avatar": avatar
+                    }
+                })
             except Exception as e:
                 log.error(f"Error in on_join for {session.username}: {e}")
 
@@ -132,7 +142,15 @@ class TikTokChatHandler:
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "comment", discord.Color.blue(), can_embed, 
                                    streamer_name=session.username, is_webhook=is_webhook)
-                await self.message_queue.put((session.text_channel, msg, display_name, avatar))
+                await self.action_queue.put({
+                    "type": "message",
+                    "payload": {
+                        "target": session.text_channel, 
+                        "content": msg, 
+                        "nick": display_name, 
+                        "avatar": avatar
+                    }
+                })
             except Exception as e:
                 log.error(f"Error in on_comment for {session.username}: {e}")
 
@@ -149,7 +167,15 @@ class TikTokChatHandler:
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "gift", discord.Color.purple(), can_embed, 
                                    streamer_name=session.username, is_webhook=is_webhook)
-                await self.message_queue.put((session.text_channel, msg, display_name, avatar))
+                await self.action_queue.put({
+                    "type": "message",
+                    "payload": {
+                        "target": session.text_channel, 
+                        "content": msg, 
+                        "nick": display_name, 
+                        "avatar": avatar
+                    }
+                })
             except Exception as e:
                 log.error(f"Error in on_gift for {session.username}: {e}")
 
@@ -164,7 +190,15 @@ class TikTokChatHandler:
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "share", discord.Color.gold(), can_embed, 
                                    streamer_name=session.username, is_webhook=is_webhook)
-                await self.message_queue.put((session.text_channel, msg, display_name, avatar))
+                await self.action_queue.put({
+                    "type": "message",
+                    "payload": {
+                        "target": session.text_channel, 
+                        "content": msg, 
+                        "nick": display_name, 
+                        "avatar": avatar
+                    }
+                })
             except Exception as e:
                 log.error(f"Error in on_share for {session.username}: {e}")
 
@@ -179,7 +213,15 @@ class TikTokChatHandler:
                 avatar = get_user_avatar(event)
                 msg = format_event(event, "follow", discord.Color.teal(), can_embed, 
                                    streamer_name=session.username, is_webhook=is_webhook)
-                await self.message_queue.put((session.text_channel, msg, display_name, avatar))
+                await self.action_queue.put({
+                    "type": "message",
+                    "payload": {
+                        "target": session.text_channel, 
+                        "content": msg, 
+                        "nick": display_name, 
+                        "avatar": avatar
+                    }
+                })
             except Exception as e:
                 log.error(f"Error in on_follow for {session.username}: {e}")
 
@@ -189,7 +231,10 @@ class TikTokChatHandler:
             
             # ⚫ Status Notification: OFFLINE
             msg = format_status_embed(session.username, "offline")
-            await self.message_queue.put((session.text_channel, msg, None, None))
+            await self.action_queue.put({
+                "type": "message",
+                "payload": {"target": session.text_channel, "content": msg}
+            })
             
             await self._on_stop_callback(session)
 

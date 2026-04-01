@@ -29,19 +29,22 @@ class TikTokLive(commands.Cog):
         # Active sessions: {username: TikTokLiveSession}
         self.active_sessions: Dict[str, TikTokLiveSession] = {}
         
-        # Rate-limited message queue: (channel_id, message_or_embed)
-        self.message_queue = asyncio.Queue()
+        # Universal Action Queue: (ActionDict)
+        self.action_queue = asyncio.Queue()
+        
+        # Throttling state: {channel_id: last_update_timestamp}
+        self.last_status_update: Dict[int, float] = {}
         
         # Handlers
-        self.voice_handler = TikTokVoiceHandler(bot)
-        self.chat_handler = TikTokChatHandler(bot, self.message_queue)
+        self.voice_handler = TikTokVoiceHandler(bot, self.action_queue)
+        self.chat_handler = TikTokChatHandler(bot, self.action_queue)
         
         # Worker tasks
         self.worker_task = None
         self.monitor_task = None
 
     async def cog_load(self):
-        self.worker_task = self.bot.loop.create_task(self._message_worker())
+        self.worker_task = self.bot.loop.create_task(self._action_worker())
         self.monitor_task = self.bot.loop.create_task(self._start_monitors())
 
     async def cog_unload(self):
@@ -55,9 +58,9 @@ class TikTokLive(commands.Cog):
         for username in usernames:
             await self._stop_session(self.active_sessions[username])
 
-    async def _message_worker(self):
-        """Worker that processes the message queue at 1 message/sec."""
-        log.info("TikTokLive message queue worker started.")
+    async def _action_worker(self):
+        """Universal Action Worker. Handles messages, status updates, and identity changes."""
+        log.info("TikTokLive action queue worker started.")
         import aiohttp
         # Disallow everyone/roles mentions for safety
         allowed = discord.AllowedMentions(everyone=False, roles=False, users=True)
@@ -66,40 +69,95 @@ class TikTokLive(commands.Cog):
         try:
             while True:
                 try:
-                    target, content, nick, avatar = await self.message_queue.get()
+                    action = await self.action_queue.get()
+                    atype = action.get("type", "message")
+                    payload = action.get("payload", {})
                     
-                    if isinstance(target, str) and target.strip().startswith("https://discord.com/api/webhooks/"):
-                        # Webhook Mode
-                        url = target.strip()
-                        try:
-                            webhook = discord.Webhook.from_url(url, session=session)
-                            if isinstance(content, discord.Embed):
-                                await webhook.send(embed=content, username=nick, avatar_url=avatar, allowed_mentions=allowed)
-                            else:
-                                await webhook.send(content=content, username=nick, avatar_url=avatar, allowed_mentions=allowed)
-                        except discord.NotFound:
-                            log.error(f"Webhook 404: The webhook URL seems invalid or was deleted. URL start: {url[:55]}...")
-                        except discord.HTTPException as e:
-                            log.error(f"Webhook HTTP error: {e.status} {e.text} (Code: {e.code})")
-                        except Exception as e:
-                            log.error(f"Webhook unexpected error: {e}")
-                    else:
-                        # Standard Channel Mode
-                        try:
-                            chan_id = int(str(target).strip())
-                            channel = self.bot.get_channel(chan_id)
-                            if channel:
+                    if atype == "message":
+                        # Payload: target, content, nick, avatar
+                        target = payload.get("target")
+                        content = payload.get("content")
+                        nick = payload.get("nick")
+                        avatar = payload.get("avatar")
+                        
+                        if isinstance(target, str) and target.strip().startswith("https://discord.com/api/webhooks/"):
+                            # Webhook Mode
+                            url = target.strip()
+                            try:
+                                webhook = discord.Webhook.from_url(url, session=session)
                                 if isinstance(content, discord.Embed):
-                                    await channel.send(embed=content, allowed_mentions=allowed)
+                                    await webhook.send(embed=content, username=nick, avatar_url=avatar, allowed_mentions=allowed)
                                 else:
-                                    await channel.send(content, allowed_mentions=allowed)
+                                    await webhook.send(content=content, username=nick, avatar_url=avatar, allowed_mentions=allowed)
+                            except discord.NotFound:
+                                log.error(f"Webhook 404: The webhook URL seems invalid or was deleted. URL start: {url[:55]}...")
+                            except discord.HTTPException as e:
+                                log.error(f"Webhook HTTP error: {e.status} {e.text} (Code: {e.code})")
+                            except Exception as e:
+                                log.error(f"Webhook unexpected error: {e}")
+                        else:
+                            # Standard Channel Mode
+                            try:
+                                chan_id = int(str(target).strip())
+                                channel = self.bot.get_channel(chan_id)
+                                if channel:
+                                    if isinstance(content, discord.Embed):
+                                        await channel.send(embed=content, allowed_mentions=allowed)
+                                    else:
+                                        await channel.send(content, allowed_mentions=allowed)
+                                else:
+                                    log.warning(f"Could not find channel {chan_id}")
+                            except ValueError:
+                                log.error(f"Invalid channel target: {target}")
+
+                    elif atype == "status":
+                        # Payload: channel, text
+                        channel = payload.get("channel")
+                        text = payload.get("text")
+                        if channel and hasattr(channel, "edit"):
+                            # Throttling: 15 seconds per channel
+                            last_upd = self.last_status_update.get(channel.id, 0)
+                            now = self.bot.loop.time()
+                            if now - last_upd < 15:
+                                # Skip too frequent updates (but always allow 'Offline'?)
+                                # Actually, keep it simple for now and skip.
+                                pass
                             else:
-                                log.warning(f"Could not find channel {chan_id}")
-                        except ValueError:
-                            log.error(f"Invalid channel target: {target}")
+                                try:
+                                    await channel.edit(status=text)
+                                    self.last_status_update[channel.id] = now
+                                    log.info(f"Updated VC status for {channel.id}: {text}")
+                                except Exception as e:
+                                    log.warning(f"Failed to set VC status: {e}")
+
+                    elif atype == "identity":
+                        # Payload: guild, nick, avatar_bytes
+                        guild = payload.get("guild")
+                        nick = payload.get("nick")
+                        avatar = payload.get("avatar_bytes")
+                        if guild and guild.me:
+                            try:
+                                params = {}
+                                if nick is not None: params["nick"] = nick[:32]
+                                if avatar is not None: params["avatar"] = avatar
+                                await guild.me.edit(**params)
+                                log.info(f"Updated bot identity in {guild.name}")
+                            except Exception as e:
+                                log.warning(f"Failed to update identity: {e}")
+
+                    elif atype == "callback":
+                        # Payload: func, args, kwargs
+                        func = payload.get("func")
+                        args = payload.get("args", [])
+                        kwargs = payload.get("kwargs", {})
+                        if func:
+                            try:
+                                await func(*args, **kwargs)
+                            except Exception as e:
+                                log.error(f"Callback execution error: {e}")
                     
-                    self.message_queue.task_done()
-                    await asyncio.sleep(1.0) # Rate limit: 1 per second
+                    self.action_queue.task_done()
+                    await asyncio.sleep(0.5) # Rate limit: 0.5s delay between any actions
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
@@ -139,7 +197,10 @@ class TikTokLive(commands.Cog):
         # 2. Setup Voice Handler
         voice_embed = await self.voice_handler.start_voice(session)
         if voice_embed:
-            await self.message_queue.put((text_channel, voice_embed, None, None))
+            await self.action_queue.put({
+                "type": "message",
+                "payload": {"target": text_channel, "content": voice_embed}
+            })
 
     async def _stop_session(self, session: TikTokLiveSession):
         """Stops both voice and chat components and cleans up resources."""
@@ -303,4 +364,16 @@ class TikTokLive(commands.Cog):
                 author_name = message.author.display_name[:12]
                 bridge_text = f"{author_name}: {content}"
                 
+                # Push bridging message to action queue
+                await self.action_queue.put({
+                    "type": "message",
+                    "payload": {
+                        "target": session.text_channel,
+                        "content": bridge_text,
+                        "nick": f"{author_name} (@{message.author.name})",
+                        "avatar": str(message.author.display_avatar.url)
+                    }
+                })
+                # No longer direct call: await self.chat_handler.send_room_chat(session, bridge_text)
+                # Correct: Bridge Discord->TikTok still direct call (TikTok rate limit is high/separate)
                 await self.chat_handler.send_room_chat(session, bridge_text)

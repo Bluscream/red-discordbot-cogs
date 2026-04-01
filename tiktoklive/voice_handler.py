@@ -4,14 +4,16 @@ import logging
 import yt_dlp
 import discord
 import aiohttp
+from redbot.core import Red
 from redbot.core.utils.chat_formatting import error
 from .session import TikTokLiveSession
 
 log = logging.getLogger("red.blu.tiktoklive.voice")
 
 class TikTokVoiceHandler:
-    def __init__(self, bot):
+    def __init__(self, bot: Red, action_queue: asyncio.Queue):
         self.bot = bot
+        self.action_queue = action_queue
 
     async def _get_hls_url(self, username: str) -> Optional[str]:
         """Extract HLS stream URL using yt-dlp."""
@@ -35,37 +37,45 @@ class TikTokVoiceHandler:
         
         # 1. Nickname
         new_nick = f"@{session.username}"[:32]
-        try:
-            await me.edit(nick=new_nick)
-            log.info(f"Set bot nickname to {new_nick} in {guild.name}")
-        except Exception as e:
-            log.warning(f"Failed to set bot nickname: {e}")
+        await self.action_queue.put({
+            "type": "identity",
+            "payload": {"guild": guild, "nick": new_nick}
+        })
 
         # 2. Server Avatar (Tier 2/Nitro)
         if session.client and hasattr(session.client, "room_info"):
             avatar_url = session.client.room_info.get("owner", {}).get("avatar_thumb", {}).get("url_list", [None])[0]
             if avatar_url:
-                try:
-                    async with aiohttp.ClientSession() as cs:
-                        async with cs.get(avatar_url) as r:
-                            if r.status == 200:
-                                avatar_bytes = await r.read()
-                                await me.edit(avatar=avatar_bytes)
-                except Exception as e:
-                    log.warning(f"Failed to set server avatar: {e}")
+                async def _fetch_and_set_avatar():
+                    try:
+                        async with aiohttp.ClientSession() as cs:
+                            async with cs.get(avatar_url) as r:
+                                if r.status == 200:
+                                    avatar_bytes = await r.read()
+                                    # Push back to queue as identity action
+                                    await self.action_queue.put({
+                                        "type": "identity",
+                                        "payload": {"guild": guild, "avatar_bytes": avatar_bytes}
+                                    })
+                    except Exception as e:
+                        log.warning(f"Failed to fetch avatar: {e}")
+                
+                # Push the fetch as a callback to avoid blocking
+                await self.action_queue.put({
+                    "type": "callback",
+                    "payload": {"func": _fetch_and_set_avatar}
+                })
 
     async def _revert_identity(self, session: TikTokLiveSession):
-        """Reverts the bot's identity to original state."""
+        """Reverts the bot's identity to original state via action queue."""
         if not session.voice_client:
             return
         guild = session.voice_client.guild
-        me = guild.me
         
-        try:
-            await me.edit(nick=session.original_nick, avatar=None)
-            log.info(f"Reverted bot identity in {guild.name}")
-        except Exception as e:
-            log.warning(f"Failed to revert bot identity: {e}")
+        await self.action_queue.put({
+            "type": "identity",
+            "payload": {"guild": guild, "nick": session.original_nick, "avatar_bytes": None}
+        })
 
     async def start_voice(self, session: TikTokLiveSession):
         """Connects to the voice channel and starts playing the TikTok stream."""
@@ -110,12 +120,13 @@ class TikTokVoiceHandler:
                     
                     # 3. Identity & Status Sync
                     await self._set_identity(session, voice_channel.guild)
-                    try:
-                        # Fetch current viewers if available
-                        viewers = getattr(session.client, 'viewer_count', 0)
-                        await voice_channel.edit(status=f"🔴 Live with {viewers} viewers")
-                    except Exception as e:
-                        log.warning(f"Failed to set VC status: {e}")
+                    
+                    # Fetch current viewers if available
+                    viewers = getattr(session.client, 'viewer_count', 0)
+                    await self.action_queue.put({
+                        "type": "status",
+                        "payload": {"channel": voice_channel, "text": f"🔴 Live with {viewers} viewers"}
+                    })
 
                     # Notify in text channel
                     embed = discord.Embed(
@@ -136,9 +147,10 @@ class TikTokVoiceHandler:
                 
                 # Revert Identity & Status
                 await self._revert_identity(session)
-                try:
-                    await session.voice_client.channel.edit(status="⚫ Offline")
-                except: pass
+                await self.action_queue.put({
+                    "type": "status",
+                    "payload": {"channel": session.voice_client.channel, "text": "⚫ Offline"}
+                })
 
                 await session.voice_client.disconnect(force=True)
             except Exception as e:
