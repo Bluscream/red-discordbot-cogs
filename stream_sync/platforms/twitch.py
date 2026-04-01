@@ -20,9 +20,10 @@ class TwitchChatBridge(twitchio.Client):
     async def setup_hook(self):
         """Called by twitchio.Client once logged in."""
         try:
-            # Subscribe to chat messages for the target broadcaster
+            # Subscribe to chat messages for the target broadcaster using EventSub v3
             from twitchio.eventsub import ChatMessageSubscription
-            await self.subscribe_chat(self.broadcaster_id, user_id=self.bot_id)
+            payload = ChatMessageSubscription(broadcaster_user_id=self.broadcaster_id, user_id=self.bot_id)
+            await self.subscribe_websocket(payload)
             self.log.info(f"TwitchIO EventSub: Subscribed to chat for {self.session.channel_id} (ID: {self.broadcaster_id})")
         except Exception as e:
             self.log.error(f"TwitchIO subscription error for {self.session.channel_id}: {e}")

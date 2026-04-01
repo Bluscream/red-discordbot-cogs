@@ -49,3 +49,12 @@ async def delete_webhook_by_url(url: str, reason: Optional[str] = None):
         log.warning("Webhook not found (already deleted?).")
     except Exception as e:
         log.error(f"Error deleting webhook: {e}")
+
+def clear_webhook_cache(channel_id: Optional[int] = None):
+    """Refreshes the internal webhook URL cache."""
+    global WEBHOOK_URL_CACHE
+    if channel_id:
+        WEBHOOK_URL_CACHE.pop(channel_id, None)
+    else:
+        WEBHOOK_URL_CACHE.clear()
+    log.debug("Webhook cache cleared.")

@@ -83,6 +83,10 @@ class ActionQueue:
                                 log.error(f"Webhook error: {e}")
                         else:
                             try:
+                                # Guard against misconfigured channel targets
+                                if not target or str(target).strip().lower() == "none":
+                                    return
+                                    
                                 chan_id = int(str(target).strip())
                                 channel = self.bot.get_channel(chan_id)
                                 if channel:
