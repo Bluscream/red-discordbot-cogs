@@ -6,7 +6,7 @@ from typing import Dict, Optional, List, Union
 
 from redbot.core import Config, commands, checks
 from redbot.core.bot import Red
-from redbot.core.utils.chat_formatting import success, error, info, bold
+from redbot.core.utils.chat_formatting import success, error
 
 from .session import TikTokLiveSession
 from .voice_handler import TikTokVoiceHandler
