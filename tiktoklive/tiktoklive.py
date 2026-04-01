@@ -133,7 +133,7 @@ class TikTokLive(commands.Cog):
         """TikTok Live Mirroring commands."""
         pass
 
-    @tiktok.group(name="set")
+    @tiktoklive.group(name="set")
     @checks.is_owner()
     async def tiktokset(self, ctx):
         """Configure global TikTok settings."""
@@ -153,7 +153,7 @@ class TikTokLive(commands.Cog):
             pass
         await ctx.send(success(f"TikTok session updated (IDC: `{tt_target_idc}`). New sessions will use this for bridging."))
 
-    @tiktok.command()
+    @tiktoklive.command()
     async def monitor(self, ctx, username: str, 
                       voice_channel: Union[discord.VoiceChannel, discord.StageChannel], 
                       text_target: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread, str]):
@@ -208,7 +208,7 @@ class TikTokLive(commands.Cog):
         
         await ctx.send(success(f"Monitoring **@{username}**. Voice: {voice_channel.mention} | Text: {display_target}"))
 
-    @tiktok.command()
+    @tiktoklive.command()
     async def stop(self, ctx, username: str):
         """Stop monitoring a TikTok user."""
         username = username.strip().replace("@", "")
@@ -221,7 +221,7 @@ class TikTokLive(commands.Cog):
         else:
             await ctx.send(error(f"Not currently monitoring **@{username}**."))
 
-    @tiktok.command()
+    @tiktoklive.command()
     async def list(self, ctx):
         """List all currently monitored TikTok users."""
         users = await self.config.monitored_users()

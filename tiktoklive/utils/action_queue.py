@@ -47,6 +47,7 @@ class ActionQueue:
         """Infinite loop to process actions from the queue."""
         async with aiohttp.ClientSession() as session:
             while True:
+                action = None
                 try:
                     action = await self.queue.get()
                     atype = action.get("type")
@@ -130,5 +131,6 @@ class ActionQueue:
                     log.error(f"Worker iteration error: {e}")
                     await asyncio.sleep(5.0)
                 finally:
-                    self.queue.task_done()
+                    if action is not None:
+                        self.queue.task_done()
                     await asyncio.sleep(0.5)
