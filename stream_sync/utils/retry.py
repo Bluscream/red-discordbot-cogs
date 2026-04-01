@@ -7,7 +7,7 @@ class StaggeredRetry:
     """
     A reusable staggered backoff utility for polling tasks in StreamSync.
     """
-    def __init__(self, start: float = 60.0, multiplier: float = 1.05, max_val: float = 3600.0):
+    def __init__(self, start: float = 60.0, multiplier: float = 1.10, max_val: float = 3600.0):
         self.start = start
         self.multiplier = multiplier
         self.max_val = max_val
