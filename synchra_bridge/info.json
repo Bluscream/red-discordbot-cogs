@@ -1,11 +1,11 @@
 {
-    "name": "Synchra",
+    "name": "SynchraBridge",
     "author": [
         "Bluscream (bluscream_)"
     ],
     "short": "Universal stream monitoring and synchronization using the Synchra API.",
     "description": "Automatically monitors live streams across multiple platforms (Twitch, YouTube, Kick, TikTok), providing real-time Discord notifications, voice channel audio bridging, and multi-platform chat synchronization using the Synchra v2.0 API.",
-    "install_msg": "Synchra cog installed! Use `[p]synchraset` to configure your API credentials and `[p]synchra monitor` to start bridging. You can also run `[p]synchra migrate` to import your streamers from the old StreamSync cog.",
+    "install_msg": "SynchraBridge cog installed! Use `[p]synchraset` to configure your API credentials and `[p]synchra monitor` to start bridging. You can also run `[p]synchra migrate` to import your streamers from the old StreamSync cog.",
     "tags": [
         "stream",
         "live",

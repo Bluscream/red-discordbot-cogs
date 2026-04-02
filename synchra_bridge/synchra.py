@@ -14,7 +14,7 @@ from .utils.api_manager import SynchraAPIManager
 from .utils.ws_handler import SynchraWSHandler
 from .voice_handler import SynchraVoiceHandler
 
-log = logging.getLogger("red.blu.synchra")
+log = logging.getLogger("red.blu.synchra_bridge")
 
 class Synchra(commands.Cog):
     """Universal stream monitoring and synchronization using the Synchra API."""
