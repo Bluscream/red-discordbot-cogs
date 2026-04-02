@@ -315,13 +315,13 @@ class Synchra(commands.Cog):
         
         await ctx.send(success(msg))
 
-    @commands.group(name="synchraset")
+    @synchra_cmd.group(name="set")
     @checks.is_owner()
-    async def synchraset(self, ctx):
+    async def synchra_set(self, ctx):
         """Configure Synchra API Credentials."""
         pass
 
-    @synchraset.command(name="token")
+    @synchra_set.command(name="token")
     async def set_token(self, ctx, token: str):
         """Set your Synchra Access Token."""
         await self.config.access_token.set(token)
@@ -330,7 +330,7 @@ class Synchra(commands.Cog):
         # Attempt to re-initialize
         await self.api.initialize()
 
-    @synchraset.command(name="client")
+    @synchra_set.command(name="client")
     async def set_client(self, ctx, client_id: str, client_secret: str):
         """Set Synchra Client ID and Secret (for OAuth)."""
         await self.config.client_id.set(client_id)
