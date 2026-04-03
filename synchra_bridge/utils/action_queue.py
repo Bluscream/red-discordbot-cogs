@@ -3,6 +3,7 @@ import discord
 import aiohttp
 import logging
 from typing import Dict, Any, Optional, Callable, Union
+from .retry import StaggeredRetry
 
 log = logging.getLogger("red.blu.synchra_bridge.utils.action_queue")
 
@@ -46,6 +47,7 @@ class SynchraActionQueue:
     async def _worker(self):
         """Infinite loop to process actions from the queue."""
         async with aiohttp.ClientSession() as session:
+            error_retry = StaggeredRetry(start=5.0, multiplier=2.0, max_val=60.0)
             while True:
                 action = None
                 try:
@@ -149,9 +151,10 @@ class SynchraActionQueue:
                     break
                 except Exception as e:
                     log.error(f"Worker iteration error: {e}")
-                    await asyncio.sleep(5.0)
+                    await error_retry.sleep()
                 finally:
                     if action is not None:
                         self.queue.task_done()
+                        error_retry.reset() # Reset on successful (non-crashed) cycle
                     # Unified mandatory delay to prevent spamming any platform
-                    await asyncio.sleep(1.0)
+                    await asyncio.sleep(self.delay)

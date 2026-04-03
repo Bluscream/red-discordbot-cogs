@@ -15,6 +15,7 @@ from .utils.ws_handler import SynchraWSHandler
 from .utils.webhooks import ensure_webhook, send_webhook_message
 from .utils.formatting import sanitize_mentions, clean_name
 from .utils.action_queue import SynchraActionQueue
+from .utils.retry import StaggeredRetry
 from .voice_handler import SynchraVoiceHandler
 
 log = logging.getLogger("red.blu.synchra_bridge")
@@ -36,6 +37,7 @@ class Synchra(commands.Cog):
         self.api = SynchraAPIManager(self.config)
         self.voice = SynchraVoiceHandler(self.bot)
         self.action_queue = SynchraActionQueue(bot, self.api, self.voice)
+        self.monitor_retry = StaggeredRetry(start=60.0, multiplier=1.2, max_val=1800.0)
         self.ws: Optional[SynchraWSHandler] = None
         
         # Runtime State
@@ -51,6 +53,7 @@ class Synchra(commands.Cog):
     async def cog_load(self):
         """Initialize the cog and start background tasks."""
         if await self.api.initialize():
+            self.monitor_retry.reset()
             # Resolve user provider for outgoing chat
             user_providers = await self.api.get_user_providers()
             if user_providers:
@@ -84,6 +87,9 @@ class Synchra(commands.Cog):
                     channel = self.bot.get_channel(session.text_channel_id)
                     if channel and isinstance(channel, discord.TextChannel):
                         session.webhook_url = await ensure_webhook(channel)
+
+                # Eagerly load providers for platform metadata
+                session.providers = await self.api.get_providers(session.channel_uuid)
 
                 if self.ws:
                     await self.ws.subscribe(session.channel_uuid)
@@ -236,7 +242,7 @@ class Synchra(commands.Cog):
         while True:
             try:
                 if not self.api.is_ready:
-                    await asyncio.sleep(60)
+                    await self.monitor_retry.sleep()
                     continue
 
                 channels = await self.config.monitored_channels()
@@ -478,6 +484,19 @@ class Synchra(commands.Cog):
                             "chat_enabled": data.get("chat_enabled", True),
                             "last_live": data.get("last_live", 0)
                         }
+                    
+                    # Register in active sessions immediately
+                    session = SynchraSession(
+                        channel_uuid=channel.id,
+                        display_name=channel.display_name or channel.name,
+                        text_channel_id=data.get("text_channel_id"),
+                        voice_channel_id=data.get("voice_channel_id"),
+                    )
+                    session.providers = await self.api.get_providers(channel.id)
+                    self.active_sessions[uuid_str] = session
+                    if self.ws:
+                        await self.ws.subscribe(session.channel_uuid)
+                    
                     count += 1
                 else:
                     failed.append(f"{platform}/{handle}")
