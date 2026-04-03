@@ -366,6 +366,42 @@ class Synchra(commands.Cog):
         """Synchra Multi-Platform Monitoring."""
         if ctx.invoked_subcommand is not None: return
         await ctx.send_help()
+    @synchra_cmd.command(name="userinfo")
+    @checks.is_owner()
+    async def synchra_userinfo(self, ctx: commands.Context):
+        """Show information about the authenticated Synchra user account."""
+        if not self.api.is_ready:
+            return await ctx.send(error("Synchra API is not initialized. Check [p]synchra set."))
+            
+        providers = await self.api.get_user_providers()
+        if not providers:
+            return await ctx.send(warning("No account providers found for this Synchra token."))
+            
+        embed = discord.Embed(
+            title="👤 Synchra Authenticated User",
+            description="Details of the account acting as the sender for chat mirroring.",
+            color=await ctx.embed_color()
+        )
+        
+        for p in providers:
+            p_id = p.get("id")
+            p_type = p.get("provider_type", "Unknown").capitalize()
+            p_name = p.get("display_name") or p.get("provider_channel_name") or "Unnamed"
+            is_active = str(p_id) == str(self.user_provider_id)
+            
+            status_emoji = "✅ (Active Sender)" if is_active else "🔗 (Linked)"
+            
+            embed.add_field(
+                name=f"{p_type}: {p_name}",
+                value=(
+                    f"**Internal ID**: `{p_id}`\n"
+                    f"**Status**: {status_emoji}\n"
+                    f"**Provider**: {p.get('provider', 'Unknown')}\n"
+                ),
+                inline=False
+            )
+            
+        await ctx.send(embed=embed)
 
     @synchra_cmd.command(name="monitor")
     @checks.admin_or_permissions(manage_guild=True)
