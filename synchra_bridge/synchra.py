@@ -419,7 +419,46 @@ class Synchra(commands.Cog):
             status = "🟢 LIVE" if session and session.is_live else "🔴 Offline"
             platforms = ", ".join(session.platform_names) if session else "Unknown"
             
-            value = f"**Status**: {status}\n**Platforms**: {platforms}\n**UUID**: `{uuid_str}`"
+            # Build detailed channel information
+            details = []
+            details.append(f"**Status**: {status}")
+            details.append(f"**Platforms**: {platforms}")
+            details.append(f"**UUID**: `{uuid_str}`")
+            
+            if session:
+                # Discord channel info
+                if session.text_channel_id:
+                    text_channel = self.bot.get_channel(session.text_channel_id)
+                    text_name = text_channel.name if text_channel else f"ID: {session.text_channel_id}"
+                    details.append(f"**Text Channel**: #{text_name}")
+                
+                if session.voice_channel_id:
+                    voice_channel = self.bot.get_channel(session.voice_channel_id)
+                    voice_name = voice_channel.name if voice_channel else f"ID: {session.voice_channel_id}"
+                    details.append(f"**Voice Channel**: 🔊 {voice_name}")
+                
+                # Feature toggles
+                features = []
+                if session.chat_enabled: features.append("💬 Chat")
+                if session.voice_enabled: features.append("🔊 Voice")
+                if features:
+                    details.append(f"**Features**: {' '.join(features)}")
+                
+                # Last live info
+                if session.last_live > 0:
+                    import datetime
+                    last_live_time = datetime.datetime.fromtimestamp(session.last_live)
+                    details.append(f"**Last Live**: {last_live_time.strftime('%Y-%m-%d %H:%M')}")
+                
+                # Current broadcast info if live
+                if session.is_live and session.providers:
+                    live_provider = next((p for p in session.providers if getattr(p, "is_live", False)), session.providers[0])
+                    title = getattr(live_provider, "title", "")
+                    game = getattr(live_provider, "game_name", "")
+                    if title: details.append(f"**Title**: {title[:50]}{'...' if len(title) > 50 else ''}")
+                    if game: details.append(f"**Game**: {game}")
+            
+            value = "\n".join(details)
             embed.add_field(name=data["display_name"], value=value, inline=False)
         
         await ctx.send(embed=embed)
@@ -474,6 +513,30 @@ class Synchra(commands.Cog):
             )
         else:
             embed.add_field(name="⚠️ Providers", value="No account providers found for this Synchra token.", inline=False)
+        
+        # Detailed Channel Information Section
+        if channels:
+            channel_details = []
+            for uuid_str, data in list(channels.items())[:5]:  # Limit to first 5 channels to avoid embed overflow
+                session = self.active_sessions.get(uuid_str)
+                status = "🟢" if session and session.is_live else "🔴"
+                platforms = ", ".join(session.platform_names[:2]) if session else "Unknown"  # Limit platforms display
+                
+                detail = f"{status} **{data['display_name']}** - {platforms}"
+                if session and session.text_channel_id:
+                    text_channel = self.bot.get_channel(session.text_channel_id)
+                    if text_channel:
+                        detail += f" → #{text_channel.name}"
+                channel_details.append(detail)
+            
+            if len(channels) > 5:
+                channel_details.append(f"... and {len(channels) - 5} more channels")
+            
+            embed.add_field(
+                name="📋 Channel Overview", 
+                value="\n".join(channel_details), 
+                inline=False
+            )
         
         await ctx.send(embed=embed)
 
