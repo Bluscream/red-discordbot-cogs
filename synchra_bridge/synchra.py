@@ -417,7 +417,37 @@ class Synchra(commands.Cog):
         for uuid_str, data in channels.items():
             session = self.active_sessions.get(uuid_str)
             status = "🟢 LIVE" if session and session.is_live else "🔴 Offline"
-            platforms = ", ".join(session.platform_names) if session else "Unknown"
+            
+            # Get platform names with better error handling
+            platforms = "Unknown"
+            if session and session.providers:
+                platform_names = []
+                for provider in session.providers:
+                    # Handle provider enum from Synchra SDK
+                    provider_field = getattr(provider, 'provider', None)
+                    if provider_field:
+                        if hasattr(provider_field, 'value'):
+                            # It's an enum, get the string value
+                            platform_names.append(str(provider_field.value).capitalize())
+                        elif isinstance(provider_field, str):
+                            # It's already a string
+                            platform_names.append(provider_field.capitalize())
+                        else:
+                            # Convert to string and capitalize
+                            platform_names.append(str(provider_field).capitalize())
+                    else:
+                        # Try other possible field names
+                        provider_type = (getattr(provider, 'type', None) or
+                                       getattr(provider, 'platform', None) or
+                                       getattr(provider, 'provider_type', None))
+                        if provider_type:
+                            if hasattr(provider_type, 'value'):
+                                platform_names.append(str(provider_type.value).capitalize())
+                            else:
+                                platform_names.append(str(provider_type).capitalize())
+                
+                if platform_names:
+                    platforms = ", ".join(platform_names)
             
             # Build detailed channel information
             details = []
@@ -500,11 +530,36 @@ class Synchra(commands.Cog):
             provider_list = []
             for p in providers:
                 p_id = p.get("id")
-                p_type = p.get("provider_type", "Unknown").capitalize()
-                p_name = p.get("display_name") or p.get("provider_channel_name") or "Unnamed"
+                
+                # Handle provider enum from Synchra SDK
+                provider_field = p.get("provider")
+                if provider_field:
+                    # Handle enum or string types
+                    if hasattr(provider_field, 'value'):
+                        # It's an enum, get the string value
+                        p_type = str(provider_field.value).capitalize()
+                    elif isinstance(provider_field, str):
+                        # It's already a string
+                        p_type = provider_field.capitalize()
+                    else:
+                        # Convert to string and capitalize
+                        p_type = str(provider_field).capitalize()
+                else:
+                    # Fallback to other possible field names
+                    p_type = (p.get("provider_type") or 
+                             p.get("type") or 
+                             p.get("platform") or 
+                             "Unknown")
+                    if isinstance(p_type, str):
+                        p_type = p_type.capitalize()
+                
+                p_name = p.get("display_name") or p.get("provider_channel_name") or p.get("name") or "Unnamed"
                 is_active = str(p_id) == str(self.user_provider_id)
                 status_emoji = "✅" if is_active else "🔗"
                 provider_list.append(f"{status_emoji} **{p_type}**: {p_name} (`{p_id}`)")
+                
+                # Debug logging to understand provider structure
+                log.debug(f"Provider structure: {p}")
             
             embed.add_field(
                 name="👤 Linked Providers", 
@@ -520,7 +575,37 @@ class Synchra(commands.Cog):
             for uuid_str, data in list(channels.items())[:5]:  # Limit to first 5 channels to avoid embed overflow
                 session = self.active_sessions.get(uuid_str)
                 status = "🟢" if session and session.is_live else "🔴"
-                platforms = ", ".join(session.platform_names[:2]) if session else "Unknown"  # Limit platforms display
+                
+                # Get platform names with better error handling
+                platforms = "Unknown"
+                if session and session.providers:
+                    platform_names = []
+                    for provider in session.providers:
+                        # Handle provider enum from Synchra SDK
+                        provider_field = getattr(provider, 'provider', None)
+                        if provider_field:
+                            if hasattr(provider_field, 'value'):
+                                # It's an enum, get the string value
+                                platform_names.append(str(provider_field.value).capitalize())
+                            elif isinstance(provider_field, str):
+                                # It's already a string
+                                platform_names.append(provider_field.capitalize())
+                            else:
+                                # Convert to string and capitalize
+                                platform_names.append(str(provider_field).capitalize())
+                        else:
+                            # Try other possible field names
+                            provider_type = (getattr(provider, 'type', None) or
+                                           getattr(provider, 'platform', None) or
+                                           getattr(provider, 'provider_type', None))
+                            if provider_type:
+                                if hasattr(provider_type, 'value'):
+                                    platform_names.append(str(provider_type.value).capitalize())
+                                else:
+                                    platform_names.append(str(provider_type).capitalize())
+                    
+                    if platform_names:
+                        platforms = ", ".join(platform_names[:2])  # Limit to first 2 for display
                 
                 detail = f"{status} **{data['display_name']}** - {platforms}"
                 if session and session.text_channel_id:
