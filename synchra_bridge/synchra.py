@@ -31,36 +31,39 @@ class Synchra(commands.Cog):
         
         # Core Managers
         self.api = SynchraAPIManager(self.config)
-        self.ws = None # Initialized after API
-        self.voice = SynchraVoiceHandler(self.bot, None) # No action_queue needed yet
+        self.ws: Optional[SynchraWSHandler] = None
+        self.voice = SynchraVoiceHandler(self.bot)
         
         # Runtime State
         self.active_sessions: Dict[str, SynchraSession] = {} # {uuid_str: session}
+        self.ws_queue = asyncio.Queue()
+        
+        # Tasks
         self._main_loop_task: Optional[asyncio.Task] = None
+        self._ws_event_task: Optional[asyncio.Task] = None
         self._initialized = False
 
     async def cog_load(self):
         """Initialize the cog and start background tasks."""
-        # Initialize API
         if await self.api.initialize():
             # Initialize WS
-            from .utils.ws_handler import SynchraWSHandler
-            # We'll use a simple callback for WS events for now
-            # In a more complex setup, we could use an ActionQueue
-            self.ws = SynchraWSHandler(self.api, asyncio.Queue())
+            self.ws = SynchraWSHandler(self.api, self.ws_queue)
             await self.ws.start()
             
-            # Start background monitoring loop
+            # Start background tasks
             self._main_loop_task = self.bot.loop.create_task(self._main_monitor_loop())
+            self._ws_event_task = self.bot.loop.create_task(self._process_ws_events())
             self._initialized = True
-            log.info("Synchra cog loaded and initialized.")
+            log.info("SynchraBridge initialized.")
         else:
-            log.warning("Synchra cog loaded but NOT initialized (missing credentials).")
+            log.warning("SynchraBridge loaded but credentials are missing. Use [p]synchra set to configure.")
 
     def cog_unload(self):
         """Cleanup resources on unload."""
         if self._main_loop_task:
             self._main_loop_task.cancel()
+        if self._ws_event_task:
+            self._ws_event_task.cancel()
         
         if self.ws:
             self.bot.loop.create_task(self.ws.stop())
@@ -71,10 +74,49 @@ class Synchra(commands.Cog):
         # Cleanup all voice clients
         for session in self.active_sessions.values():
             if session.voice_client:
-                self.bot.loop.create_task(session.voice_client.disconnect(force=True))
+                self.bot.loop.create_task(self.voice.stop_voice(session))
+
+    async def _process_ws_events(self):
+        """Process real-time events from the WebSocket queue."""
+        log.info("Synchra WS event processor started.")
+        while True:
+            try:
+                event = await self.ws_queue.get()
+                etype = event.get("type")
+                channel_id = event.get("channel_id")
+                
+                if not channel_id or str(channel_id) not in self.active_sessions:
+                    self.ws_queue.task_done()
+                    continue
+                
+                session = self.active_sessions[str(channel_id)]
+                
+                if etype == "ws_status":
+                    is_live = event.get("is_live", False)
+                    if is_live:
+                        # Fetch fresh providers for metadata
+                        providers = await self.api.get_providers(session.channel_uuid)
+                        await self._handle_go_live(session, providers)
+                    else:
+                        await self._handle_go_offline(session)
+                
+                elif etype == "ws_activity":
+                    # Potentially handle follows/subs notifications here
+                    pass
+                
+                elif etype == "chat_message":
+                    # Handle chat synchronization
+                    pass
+                
+                self.ws_queue.task_done()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.error(f"Error in WS event processor: {e}")
+                await asyncio.sleep(1)
 
     async def _main_monitor_loop(self):
-        """Main loop for status polling and session management."""
+        """Main loop for status polling and session management (Fallback/Integrity check)."""
         log.info("Synchra main monitor loop started.")
         await self.bot.wait_until_ready()
         
@@ -102,31 +144,27 @@ class Synchra(commands.Cog):
                         )
                         self.active_sessions[uuid_str] = session
                         # Subscribe via WS
-                        await self.ws.subscribe(session.channel_uuid)
+                        if self.ws:
+                            await self.ws.subscribe(session.channel_uuid)
 
-                    # 2. Check status (Polling while WS events aren't fully mapped)
+                    # 2. Check status (Integrity check / Fallback for WS failures)
                     session = self.active_sessions[uuid_str]
                     now = time.time()
                     
-                    # Interval: 5 minutes when live, 1-2 minutes when offline (for fast detection)
-                    interval = 60 if not session.is_live else 300
+                    # Interval: Much longer if WS is active, otherwise fallback to polling
+                    interval = 600 if (self.ws and self.ws._running) else 120
                     if now - session.last_status_check < interval:
                         continue
                     
                     session.last_status_check = now
                     try:
-                        channel_data = await self.api.get_channel_by_uuid(session.channel_uuid)
-                        if channel_data:
-                            # Synchra 'Channel' model usually has a status field or similar
-                            # Since I don't have the exact property, I'll check a few possibilities
-                            # Or check if any provider is live
-                            providers = await self.api.get_providers(session.channel_uuid)
-                            is_currently_live = any(getattr(p, "is_live", False) for p in providers)
-                            
-                            if is_currently_live:
-                                await self._handle_go_live(session, providers)
-                            else:
-                                await self._handle_go_offline(session)
+                        providers = await self.api.get_providers(session.channel_uuid)
+                        is_currently_live = any(getattr(p, "is_live", False) for p in providers)
+                        
+                        if is_currently_live:
+                            await self._handle_go_live(session, providers)
+                        else:
+                            await self._handle_go_offline(session)
                     except Exception as e:
                         log.error(f"Error checking status for {session.display_name}: {e}")
 
@@ -148,7 +186,7 @@ class Synchra(commands.Cog):
         title = getattr(live_provider, "title", "Live Broadcast")
         game = getattr(live_provider, "game_name", "")
         
-        # Notify text channel via Webhook or Message
+        # Notify text channel
         description = f"**{session.display_name}** is now live!"
         if title: description += f"\n\n> {title}"
         if game: description += f"\n🎮 {game}"
@@ -159,9 +197,8 @@ class Synchra(commands.Cog):
             
         await self._send_notification(session, embed)
         
-        # Start Voice Bridge if enabled
+        # Start Voice Bridge
         if session.voice_enabled and session.voice_channel_id:
-            # First, resolve HLS URL
             session.hls_url = await self.api.get_hls_fallback(session.platform, session.handle)
             if session.hls_url:
                 await self.voice.start_voice(session)
@@ -211,7 +248,7 @@ class Synchra(commands.Cog):
                       voice_channel: Optional[discord.VoiceChannel] = None):
         """Start monitoring a channel via its platform-specific handle."""
         if not self.api.is_ready:
-            return await ctx.send(error("Synchra API not configured. Use `[p]synchraset` first."))
+            return await ctx.send(error("Synchra API not configured. Use `[p]synchra set` first."))
 
         await ctx.typing()
         channel = await self.api.lookup_channel(platform, handle)
@@ -239,7 +276,6 @@ class Synchra(commands.Cog):
         """Stop monitoring a channel."""
         found_uuid = None
         async with self.config.monitored_channels() as channels:
-            # Try to find by UUID or Handle
             for uuid_str, data in channels.items():
                 if uuid_str == channel_id_or_handle or data["handle"].lower() == channel_id_or_handle.lower():
                     found_uuid = uuid_str
@@ -249,8 +285,10 @@ class Synchra(commands.Cog):
                 del channels[found_uuid]
                 if found_uuid in self.active_sessions:
                     session = self.active_sessions.pop(found_uuid)
-                    await self.ws.unsubscribe(session.channel_uuid)
-                    if session.voice_client: await self.voice.stop_voice(session)
+                    if self.ws:
+                        await self.ws.unsubscribe(session.channel_uuid)
+                    if session.voice_client: 
+                        await self.voice.stop_voice(session)
                 return await ctx.send(success(f"Stopped monitoring channel."))
         
         await ctx.send(error(f"Channel not found in monitoring list."))
@@ -280,7 +318,7 @@ class Synchra(commands.Cog):
             return await ctx.send(error("StreamSync cog not found. Make sure it is loaded."))
 
         if not self.api.is_ready:
-            return await ctx.send(error("Synchra API not configured. Use `[p]synchraset` first."))
+            return await ctx.send(error("Synchra API not configured. Use `[p]synchra set` first."))
 
         await ctx.typing()
         old_streams = await stream_sync_cog.config.monitored_streams()
@@ -289,7 +327,6 @@ class Synchra(commands.Cog):
 
         for platform, channels in old_streams.items():
             for handle, data in channels.items():
-                # Attempt lookup
                 channel = await self.api.lookup_channel(platform, handle)
                 if channel:
                     uuid_str = str(channel.id)
@@ -327,7 +364,6 @@ class Synchra(commands.Cog):
         await self.config.access_token.set(token)
         await ctx.message.delete()
         await ctx.send(success("Synchra Access Token updated."), delete_after=5)
-        # Attempt to re-initialize
         await self.api.initialize()
 
     @synchra_set.command(name="client")
@@ -337,5 +373,4 @@ class Synchra(commands.Cog):
         await self.config.client_secret.set(client_secret)
         await ctx.message.delete()
         await ctx.send(success("Synchra OAuth credentials updated."), delete_after=5)
-        # Attempt to re-initialize
         await self.api.initialize()

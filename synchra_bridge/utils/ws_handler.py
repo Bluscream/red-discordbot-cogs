@@ -9,14 +9,18 @@ class SynchraWSHandler:
     def __init__(self, api_manager, action_queue):
         self.api = api_manager
         self.action_queue = action_queue
-        self.log = logging.getLogger("red.blu.synchra.ws")
+        self.log = logging.getLogger("red.blu.synchra_bridge.ws")
         self._running = False
         self._task: Optional[asyncio.Task] = None
+        self._subscriptions = set()
 
     async def start(self):
         """Start the WebSocket client and register handlers."""
         if not self.api.is_ready:
             self.log.warning("API Manager not ready. WebSocket not started.")
+            return
+
+        if self._running:
             return
 
         self._running = True
@@ -30,52 +34,94 @@ class SynchraWSHandler:
         async def on_chat(event):
             await self._handle_chat(event)
 
+        @self.api.client.ws.on("status")
+        async def on_status(event):
+            await self._handle_status(event)
+
         # Connect
-        await self.api.client.connect()
-        self.log.info("Synchra WebSocket connection initiated.")
+        try:
+            await self.api.client.connect()
+            self.log.info("Synchra WebSocket connection initiated.")
+        except Exception as e:
+            self.log.error(f"Failed to initiate WS connection: {e}")
+            self._running = False
 
     async def stop(self):
         """Stop the WebSocket client."""
         self._running = False
         if self.api.client:
-            await self.api.client.ws.close()
+            try:
+                await self.api.client.ws.close()
+            except: pass
+        self._subscriptions.clear()
 
     async def subscribe(self, channel_uuid: UUID):
         """Subscribe to events for a specific channel."""
         if not self.api.is_ready: return
+        if channel_uuid in self._subscriptions: return
+
         self.log.info(f"Subscribing to WS events for channel: {channel_uuid}")
-        await self.api.client.ws.subscribe("activity", channel_uuid)
-        await self.api.client.ws.subscribe("chat", channel_uuid)
+        try:
+            await self.api.client.ws.subscribe("activity", channel_uuid)
+            await self.api.client.ws.subscribe("chat", channel_uuid)
+            await self.api.client.ws.subscribe("status", channel_uuid)
+            self._subscriptions.add(channel_uuid)
+        except Exception as e:
+            self.log.error(f"Failed to subscribe to {channel_uuid}: {e}")
 
     async def unsubscribe(self, channel_uuid: UUID):
         """Unsubscribe from events for a channel."""
         if not self.api.is_ready: return
-        await self.api.client.ws.unsubscribe("activity", channel_uuid)
-        await self.api.client.ws.unsubscribe("chat", channel_uuid)
+        try:
+            await self.api.client.ws.unsubscribe("activity", channel_uuid)
+            await self.api.client.ws.unsubscribe("chat", channel_uuid)
+            await self.api.client.ws.unsubscribe("status", channel_uuid)
+            self._subscriptions.discard(channel_uuid)
+        except Exception as e:
+            self.log.error(f"Failed to unsubscribe from {channel_uuid}: {e}")
+
+    async def _handle_status(self, event: Dict[str, Any]):
+        """Handle stream status changes (online/offline)."""
+        data = event.get("data", {})
+        channel_id = event.get("channel_id")
+        if not channel_id: return
+
+        is_live = data.get("is_live", False)
+        self.log.info(f"WS Status Update: {channel_id} is now {'LIVE' if is_live else 'OFFLINE'}")
+        
+        await self.action_queue.put({
+            "type": "ws_status",
+            "channel_id": channel_id,
+            "is_live": is_live,
+            "payload": event
+        })
 
     async def _handle_activity(self, event: Dict[str, Any]):
         """Handle incoming activity events (follows, subs, etc.)."""
-        # This can be used for Discord notifications
         data = event.get("data", {})
-        self.log.debug(f"Received activity event: {data.get('type')}")
-        # We can dispatch this to the action queue for processing in the cog
-        await self.action_queue.put({"type": "ws_activity", "payload": event})
+        channel_id = event.get("channel_id")
+        if not channel_id: return
+
+        self.log.debug(f"Received WS activity: {data.get('type')} for {channel_id}")
+        await self.action_queue.put({
+            "type": "ws_activity", 
+            "channel_id": channel_id,
+            "payload": event
+        })
 
     async def _handle_chat(self, event: Dict[str, Any]):
         """Handle incoming chat messages for synchronization."""
-        # Synchra chat events are unified across platforms
         data = event.get("data", {})
-        if not data: return
+        channel_id = event.get("channel_id")
+        if not data or not channel_id: return
         
-        # Payload format based on SDK models/ws.py
-        # We need to map this to our Discord bridge logic
         await self.action_queue.put({
             "type": "chat_message",
+            "channel_id": channel_id,
             "payload": {
                 "platform": data.get("provider", "unknown"),
-                "channel_id": data.get("provider_channel_id"), # Or map back to internal name
                 "author": data.get("viewer_display_name") or data.get("viewer_name"),
-                "message": data.get("message"), # This might need construction from parts if it's complex
+                "message": data.get("message"),
                 "raw_event": event
             }
         })

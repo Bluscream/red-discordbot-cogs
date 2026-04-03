@@ -5,17 +5,19 @@ import discord
 from redbot.core.bot import Red
 from .session import SynchraSession
 
-log = logging.getLogger("red.blu.synchra.voice")
+log = logging.getLogger("red.blu.synchra_bridge.voice")
 
 class SynchraVoiceHandler:
     """Handles FFmpeg audio streaming to Discord voice channels for Synchra sessions."""
     
-    def __init__(self, bot: Red, action_queue: Any):
+    def __init__(self, bot: Red):
         self.bot = bot
-        self.action_queue = action_queue
 
     async def start_voice(self, session: SynchraSession):
         """Connect to voice and start the HLS stream."""
+        if not session.voice_channel_id:
+            return
+            
         voice_channel = self.bot.get_channel(session.voice_channel_id)
         if not voice_channel:
             log.warning(f"Voice channel {session.voice_channel_id} not found for {session.display_name}")
@@ -31,7 +33,7 @@ class SynchraVoiceHandler:
         except Exception as e:
             log.error(f"Failed to connect to voice for {session.display_name}: {e}")
             return
-
+ 
         if not session.hls_url:
             log.warning(f"No HLS URL found for {session.display_name}. Voice bridge aborted.")
             return
@@ -48,11 +50,12 @@ class SynchraVoiceHandler:
             if session.voice_client.is_playing():
                 session.voice_client.stop()
             
-            session.voice_client.play(audio_source)
+            def after_playing(error):
+                if error:
+                    log.error(f"FFmpeg playback error for {session.display_name}: {error}")
+
+            session.voice_client.play(audio_source, after=after_playing)
             log.info(f"Started voice bridge for {session.display_name} in {voice_channel.name}")
-            
-            # Identity synchronization (Optional, but nice for branding)
-            # await self._sync_identity(session, voice_channel.guild)
             
             return discord.Embed(
                 description=f"🔊 Now streaming audio from **{session.display_name}**.",
@@ -64,12 +67,18 @@ class SynchraVoiceHandler:
 
     async def stop_voice(self, session: SynchraSession):
         """Stop playback and disconnect from voice."""
-        if session.voice_client:
-            try:
-                if session.voice_client.is_playing():
-                    session.voice_client.stop()
+        if not session.voice_client:
+            return
+
+        try:
+            if session.voice_client.is_playing():
+                session.voice_client.stop()
+            
+            if session.voice_client.is_connected():
                 await session.voice_client.disconnect(force=True)
-                log.info(f"Stopped voice bridge for {session.display_name}")
-            except Exception as e:
-                log.error(f"Error disconnecting voice for {session.display_name}: {e}")
+            
+            log.info(f"Stopped voice bridge for {session.display_name}")
+        except Exception as e:
+            log.error(f"Error disconnecting voice for {session.display_name}: {e}")
+        finally:
             session.voice_client = None

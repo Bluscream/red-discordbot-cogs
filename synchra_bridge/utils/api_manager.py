@@ -7,7 +7,7 @@ import httpx
 from synchra import SynchraClient
 from synchra.models.resources import Channel, ChannelProvider
 
-log = logging.getLogger("red.blu.synchra.api")
+log = logging.getLogger("red.blu.synchra_bridge.api")
 
 class SynchraAPIManager:
     """Wrapper for the Synchra SDK to handle authentication and high-level operations."""
@@ -27,19 +27,25 @@ class SynchraAPIManager:
             log.warning("Synchra API credentials missing. API manager not initialized.")
             return False
 
-        self.client = SynchraClient(
-            access_token=access_token,
-            client_id=client_id,
-            client_secret=client_secret
-        )
-        self._initialized = True
-        log.info("Synchra API Manager initialized.")
-        return True
+        try:
+            self.client = SynchraClient(
+                access_token=access_token,
+                client_id=client_id,
+                client_secret=client_secret
+            )
+            self._initialized = True
+            log.info("Synchra API Manager initialized.")
+            return True
+        except Exception as e:
+            log.error(f"Failed to initialize Synchra SDK: {e}")
+            return False
 
     async def close(self):
         """Close the API client."""
         if self.client:
-            await self.client.close()
+            try:
+                await self.client.close()
+            except: pass
             self.client = None
             self._initialized = False
 
@@ -83,9 +89,10 @@ class SynchraAPIManager:
     async def get_hls_fallback(self, platform: str, handle: str) -> Optional[str]:
         """
         Fallback HLS resolution using yt-dlp.
-        This is called if Synchra doesn't provide a direct stream URL.
+        Called if Synchra doesn't provide a direct stream URL.
         """
         import asyncio
+        platform = platform.lower()
         url_map = {
             "twitch": f"https://www.twitch.tv/{handle}",
             "youtube": f"https://www.youtube.com/@{handle}/live",
@@ -93,25 +100,33 @@ class SynchraAPIManager:
             "tiktok": f"https://www.tiktok.com/@{handle}/live"
         }
         
-        target_url = url_map.get(platform.lower())
+        target_url = url_map.get(platform)
         if not target_url:
+            log.debug(f"No HLS mapping for platform: {platform}")
             return None
 
         # Call yt-dlp asynchronously
-        cmd = ["yt-dlp", "-g", "--format", "best", target_url]
+        cmd = ["yt-dlp", "-g", "--format", "best", "--no-warnings", target_url]
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            stdout, stderr = await proc.communicate()
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
             if proc.returncode == 0:
                 hls_url = stdout.decode().strip()
-                return hls_url
+                if hls_url:
+                    log.debug(f"Resolved HLS for {handle} ({platform}): {hls_url[:50]}...")
+                    return hls_url
             else:
-                log.warning(f"yt-dlp failed to resolve {target_url}: {stderr.decode()}")
+                err_msg = stderr.decode().strip()
+                log.warning(f"yt-dlp failed for {handle} ({platform}): {err_msg[:100]}")
+        except asyncio.TimeoutError:
+            log.error(f"yt-dlp timed out resolving {handle}")
+            try: proc.kill()
+            except: pass
         except Exception as e:
-            log.error(f"yt-dlp execution error: {e}")
+            log.error(f"yt-dlp error for {handle}: {e}")
         
         return None
