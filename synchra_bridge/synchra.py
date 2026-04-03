@@ -403,6 +403,32 @@ class Synchra(commands.Cog):
             
         await ctx.send(embed=embed)
 
+    @synchra_cmd.command(name="account")
+    @checks.is_owner()
+    async def synchra_account(self, ctx: commands.Context):
+        """Show information about the authenticated Synchra user account."""
+        if not self.api.is_ready:
+            return await ctx.send(error("Synchra API is not initialized. Check [p]synchra set."))
+            
+        user = await self.api.get_user_info()
+        if not user:
+            return await ctx.send(warning("Could not fetch user info for this Synchra token."))
+            
+        embed = discord.Embed(
+            title="🔗 Synchra Account Verification",
+            description="Use this information to verify your account in the Synchra Dashboard.",
+            color=await ctx.embed_color()
+        )
+        embed.add_field(name="Username", value=f"`{user.get('username', 'N/A')}`", inline=True)
+        embed.add_field(name="User ID", value=f"`{user.get('id', 'N/A')}`", inline=True)
+        
+        # Avoid showing email publicly unless explicitly asked
+        email = user.get('email')
+        if email:
+            embed.add_field(name="Email", value=f"||{email}||", inline=False)
+        
+        await ctx.send(embed=embed)
+
     @synchra_cmd.command(name="monitor")
     @checks.admin_or_permissions(manage_guild=True)
     async def monitor(self, ctx, platform: str, handle: str, 

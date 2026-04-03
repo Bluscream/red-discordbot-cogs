@@ -62,6 +62,15 @@ class SynchraAPIManager:
             log.error(f"Error fetching user providers: {e}")
             return []
 
+    async def get_user_info(self) -> Dict[str, Any]:
+        """Fetch basic profile info for the current user."""
+        if not self.is_ready: return {}
+        try:
+            return await self.client.http.get("/api/2/user")
+        except Exception as e:
+            log.error(f"Error fetching user info: {e}")
+            return {}
+
     async def send_chat_message(self, channel_provider_id: str, message: str, user_provider_id: str):
         """Send a chat message via Synchra."""
         if not self.is_ready: return
