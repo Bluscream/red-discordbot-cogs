@@ -14,6 +14,7 @@ from .utils.api_manager import SynchraAPIManager
 from .utils.ws_handler import SynchraWSHandler
 from .utils.webhooks import ensure_webhook, send_webhook_message
 from .utils.formatting import sanitize_mentions, clean_name
+from .utils.action_queue import SynchraActionQueue
 from .voice_handler import SynchraVoiceHandler
 
 log = logging.getLogger("red.blu.synchra_bridge")
@@ -33,8 +34,9 @@ class Synchra(commands.Cog):
         
         # Core Managers
         self.api = SynchraAPIManager(self.config)
-        self.ws: Optional[SynchraWSHandler] = None
         self.voice = SynchraVoiceHandler(self.bot)
+        self.action_queue = SynchraActionQueue(bot, self.api, self.voice)
+        self.ws: Optional[SynchraWSHandler] = None
         
         # Runtime State
         self.active_sessions: Dict[str, SynchraSession] = {} # {uuid_str: session}
@@ -58,6 +60,7 @@ class Synchra(commands.Cog):
                 log.warning("No linked providers found for Synchra account. Outgoing chat disabled.")
 
             # Initialize WS
+            self.action_queue.start()
             self.ws = SynchraWSHandler(self.api, self.ws_queue)
             await self.ws.start()
             
@@ -95,10 +98,13 @@ class Synchra(commands.Cog):
 
     def cog_unload(self):
         """Cleanup resources on unload."""
-        if self._main_loop_task:
-            self._main_loop_task.cancel()
+        if self.monitor_task:
+            self.monitor_task.cancel()
         if self._ws_event_task:
             self._ws_event_task.cancel()
+        
+        # Stop Action Queue
+        self.bot.loop.create_task(self.action_queue.stop())
         
         if self.ws:
             self.bot.loop.create_task(self.ws.stop())
@@ -174,21 +180,23 @@ class Synchra(commands.Cog):
             content = sanitize_mentions(content)
             # Use Webhook if available
             if session.webhook_url:
-                success = await send_webhook_message(
-                    url=session.webhook_url,
-                    content=content,
-                    username=f"[{str(provider).capitalize()}] {user}",
-                    avatar_url=avatar
-                )
-                if success:
-                    return
-
-            # Fallback to standard message
-            msg = f"**[{str(provider).capitalize()}]** {user}: {content}"
-            try:
-                await channel.send(msg, allowed_mentions=discord.AllowedMentions.none())
-            except Exception as e:
-                log.error(f"Failed to relay chat to Discord: {e}")
+                await self.action_queue.put({
+                    "type": "webhook",
+                    "payload": {
+                        "url": session.webhook_url,
+                        "content": content,
+                        "nick": f"[{str(provider).capitalize()}] {user}",
+                        "avatar": avatar
+                    }
+                })
+            else:
+                await self.action_queue.put({
+                    "type": "message",
+                    "payload": {
+                        "target": session.text_channel_id,
+                        "content": f"**[{str(provider).capitalize()}]** {user}: {content}"
+                    }
+                })
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -211,11 +219,13 @@ class Synchra(commands.Cog):
                         continue
                         
                     # Send to Synchra
-                    await self.api.send_chat_message(
-                        channel_provider_id=str(provider.id),
-                        message=message.content,
-                        user_provider_id=str(self.user_provider_id)
-                    )
+                    await self.action_queue.put({
+                        "type": "synchra_chat",
+                        "payload": {
+                            "channel_uuid": str(provider.id),
+                            "message": f"[{message.author.display_name}] {message.clean_content}"
+                        }
+                    })
                 break
 
     async def _main_monitor_loop(self):
@@ -307,7 +317,10 @@ class Synchra(commands.Cog):
             
             session.hls_url = await self.api.get_hls_fallback(platform, handle)
             if session.hls_url:
-                await self.voice.start_voice(session)
+                await self.action_queue.put({
+                    "type": "voice_connect",
+                    "payload": {"session": session}
+                })
 
     async def _handle_go_offline(self, session: SynchraSession):
         """Triggered when a channel goes offline."""
@@ -324,22 +337,22 @@ class Synchra(commands.Cog):
         
         # Stop Voice Bridge
         if session.voice_client:
-            await self.voice.stop_voice(session)
+            await self.action_queue.put({
+                "type": "voice_disconnect",
+                "payload": {"session": session}
+            })
             
         await self._send_notification(session, f"⚫ **{session.display_name}** is now offline.")
 
     async def _send_notification(self, session: SynchraSession, content: Union[str, discord.Embed]):
-        """Send a notification to the session's text channel."""
-        target_channel = self.bot.get_channel(session.text_channel_id)
-        if not target_channel: return
-        
-        try:
-            if isinstance(content, discord.Embed):
-                await target_channel.send(embed=content)
-            else:
-                await target_channel.send(content)
-        except Exception as e:
-            log.warning(f"Failed to send notification for {session.display_name}: {e}")
+        """Queues a notification for a session's text channel."""
+        await self.action_queue.put({
+            "type": "message",
+            "payload": {
+                "target": session.text_channel_id,
+                "content": content
+            }
+        })
 
     @commands.hybrid_group(name="synchra", invoke_without_command=True)
     async def synchra_cmd(self, ctx):
