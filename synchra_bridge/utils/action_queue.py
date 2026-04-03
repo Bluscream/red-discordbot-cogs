@@ -113,6 +113,16 @@ class SynchraActionQueue:
                             except Exception as e:
                                 log.error(f"Synchra broadcast error: {e}")
 
+                    elif atype == "synchra_broadcast":
+                        channel_id = payload.get("channel_id")
+                        message = payload.get("message")
+                        user_provider_id = payload.get("user_provider_id")
+                        if channel_id and message and user_provider_id:
+                            try:
+                                await self.api.broadcast_chat_message(channel_id, message, user_provider_id)
+                            except Exception as e:
+                                log.error(f"Synchra multi-broadcast error: {e}")
+
                     elif atype == "status":
                         channel_id = payload.get("channel_id")
                         text = payload.get("text")

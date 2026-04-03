@@ -51,13 +51,19 @@ class SynchraAPIManager:
 
     @property
     def is_ready(self) -> bool:
+        """Whether the manager is correctly initialized with credentials."""
         return self._initialized and self.client is not None
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the underlying SDK has an active WebSocket session."""
+        return self.client is not None and self.client.is_ready
 
     async def get_user_providers(self) -> List[Dict[str, Any]]:
         """Fetch providers linked to the authenticated user account."""
         if not self.is_ready: return []
         try:
-            return await self.client.http.get("/api/2/user/providers")
+            return await self.client.user.list_providers()
         except Exception as e:
             log.error(f"Error fetching user providers: {e}")
             return []
@@ -66,24 +72,46 @@ class SynchraAPIManager:
         """Fetch basic profile info for the current user."""
         if not self.is_ready: return {}
         try:
-            return await self.client.http.get("/api/2/user")
+            return await self.client.user.get_info()
         except Exception as e:
             log.error(f"Error fetching user info: {e}")
             return {}
 
     async def send_chat_message(self, channel_provider_id: str, message: str, user_provider_id: str):
-        """Send a chat message via Synchra."""
+        """Send a chat message to a specific provider via Synchra."""
         if not self.is_ready: return
         try:
-            data = {
-                "user_provider_id": str(user_provider_id),
-                "channel_provider_id": str(channel_provider_id),
-                "message": message
-            }
-            return await self.client.http.post("/api/2/chat/messages", json=data)
+            return await self.client.chat.send_message(channel_provider_id, message, user_provider_id)
         except Exception as e:
             log.error(f"Error sending chat message: {e}")
             return None
+
+    async def broadcast_chat_message(self, channel_id: Union[str, UUID], message: str, user_provider_id: str):
+        """Broadcast a chat message to all supported platforms for a channel."""
+        if not self.is_ready: return
+        try:
+            return await self.client.chat.send_message_all(UUID(str(channel_id)), message, user_provider_id)
+        except Exception as e:
+            log.error(f"Error broadcasting chat message: {e}")
+            return None
+
+    async def get_user_info(self):
+        """Fetch basic profile info for the authenticated user from Synchra."""
+        if not self.is_ready: return None
+        try:
+            return await self.client.user.get_info()
+        except Exception as e:
+            log.error(f"Error fetching Synchra user info: {e}")
+            return None
+
+    async def list_user_providers(self):
+        """Fetch all linked platform providers for the authenticated user."""
+        if not self.is_ready: return []
+        try:
+            return await self.client.user.list_providers()
+        except Exception as e:
+            log.error(f"Error listing Synchra user providers: {e}")
+            return []
 
     async def get_channel_by_uuid(self, uuid: Union[str, UUID]) -> Optional[Channel]:
         """Fetch a channel by its Synchra UUID."""

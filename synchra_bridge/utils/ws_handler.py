@@ -37,10 +37,7 @@ class SynchraWSHandler:
 
         @self.api.client.ws.on("connect")
         async def on_connect():
-            self.log.info("Synchra WebSocket connected. Re-applying subscriptions...")
-            # Re-apply all pending subscriptions
-            for channel_uuid in list(self._subscriptions):
-                await self._do_subscribe(channel_uuid)
+            self.log.info("Synchra WebSocket session authorized and ready.")
                 
         @self.api.client.ws.on("disconnect")
         async def on_disconnect():

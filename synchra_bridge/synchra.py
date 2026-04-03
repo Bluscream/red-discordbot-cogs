@@ -94,11 +94,18 @@ class Synchra(commands.Cog):
                 if self.ws:
                     await self.ws.subscribe(session.channel_uuid)
 
+            # Fetch and log Synchra user profile info
+            user_info = await self.api.get_user_info()
+            if user_info:
+                username = user_info.get("username", "Unknown")
+                uid = user_info.get("id", "Unknown")
+                log.info(f"Authenticated with Synchra as: {username} ({uid})")
+
             # Start background tasks
             self._main_loop_task = self.bot.loop.create_task(self._main_monitor_loop())
             self._ws_event_task = self.bot.loop.create_task(self._process_ws_events())
             self._initialized = True
-            log.info("SynchraBridge initialized.")
+            log.info(f"SynchraBridge initialized. Monitoring {len(self.active_sessions)} channels.")
         else:
             log.warning("SynchraBridge loaded but credentials missing. Use [p]synchra set.")
 
@@ -218,21 +225,15 @@ class Synchra(commands.Cog):
                 if not session.chat_enabled:
                     continue
                 
-                # Forward to all active providers (except tiktok)
-                for provider in session.providers:
-                    p_type = getattr(provider.provider, 'value', str(provider.provider)).lower()
-                    if p_type == "tiktok":
-                        continue
-                        
-                    # Send to Synchra
-                    await self.action_queue.put({
-                        "type": "synchra_chat",
-                        "payload": {
-                            "channel_provider_id": str(provider.id),
-                            "message": f"[{message.author.display_name}] {message.clean_content}",
-                            "user_provider_id": str(self.user_provider_id)
-                        }
-                    })
+                # Forward to all active providers via Synchra Broadcast
+                await self.action_queue.put({
+                    "type": "synchra_broadcast",
+                    "payload": {
+                        "channel_id": str(session.channel_uuid),
+                        "message": f"[{message.author.display_name}] {message.clean_content}",
+                        "user_provider_id": str(self.user_provider_id)
+                    }
+                })
                 break
 
     async def _main_monitor_loop(self):
@@ -362,70 +363,117 @@ class Synchra(commands.Cog):
         })
 
     @commands.hybrid_group(name="synchra", invoke_without_command=True)
-    async def synchra_cmd(self, ctx):
-        """Synchra Multi-Platform Monitoring."""
-        if ctx.invoked_subcommand is not None: return
-        await ctx.send_help()
-    @synchra_cmd.command(name="userinfo")
-    @checks.is_owner()
-    async def synchra_userinfo(self, ctx: commands.Context):
-        """Show information about the authenticated Synchra user account."""
-        if not self.api.is_ready:
-            return await ctx.send(error("Synchra API is not initialized. Check [p]synchra set."))
-            
-        providers = await self.api.get_user_providers()
-        if not providers:
-            return await ctx.send(warning("No account providers found for this Synchra token."))
-            
+    async def synchra_cmd(self, ctx: commands.Context):
+        """
+        Synchra Multi-Platform Monitoring.
+        """
+        if ctx.invoked_subcommand is not None:
+            return
+
+        # Determine what to show based on caller permissions
+        if await self.bot.is_owner(ctx.author):
+            # Owner gets comprehensive account info
+            await self._show_owner_info(ctx)
+        elif ctx.channel.permissions_for(ctx.author).manage_guild:
+            # Admin gets monitored channels list
+            await self._show_channels_list(ctx)
+        else:
+            # Regular users get basic status
+            await self._show_basic_status(ctx)
+    async def _show_basic_status(self, ctx: commands.Context):
+        """Show basic status for regular users."""
+        status_icon = "🟢" if self.api.is_connected else "🔴"
+        status_text = "Online" if self.api.is_connected else "Offline"
+        
         embed = discord.Embed(
-            title="👤 Synchra Authenticated User",
-            description="Details of the account acting as the sender for chat mirroring.",
-            color=await ctx.embed_color()
+            title="🔗 Synchra Bridge Status",
+            description=f"Status: {status_icon} `{status_text}`\nMonitored Channels: `{len(self.active_sessions)}`",
+            color=discord.Color.green() if self.api.is_connected else discord.Color.red()
         )
         
-        for p in providers:
-            p_id = p.get("id")
-            p_type = p.get("provider_type", "Unknown").capitalize()
-            p_name = p.get("display_name") or p.get("provider_channel_name") or "Unnamed"
-            is_active = str(p_id) == str(self.user_provider_id)
-            
-            status_emoji = "✅ (Active Sender)" if is_active else "🔗 (Linked)"
-            
-            embed.add_field(
-                name=f"{p_type}: {p_name}",
-                value=(
-                    f"**Internal ID**: `{p_id}`\n"
-                    f"**Status**: {status_emoji}\n"
-                    f"**Provider**: {p.get('provider', 'Unknown')}\n"
-                ),
-                inline=False
-            )
-            
         await ctx.send(embed=embed)
 
-    @synchra_cmd.command(name="account")
-    @checks.is_owner()
-    async def synchra_account(self, ctx: commands.Context):
-        """Show information about the authenticated Synchra user account."""
+    async def _show_channels_list(self, ctx: commands.Context):
+        """Show monitored channels list for admins."""
+        channels = await self.config.monitored_channels()
+        if not channels:
+            embed = discord.Embed(
+                title="📋 Monitored Synchra Channels",
+                description="No channels are being monitored.",
+                color=discord.Color.orange()
+            )
+            return await ctx.send(embed=embed)
+            
+        status_icon = "🟢" if self.api.is_connected else "🔴"
+        status_text = "Online" if self.api.is_connected else "Offline"
+        live_count = sum(1 for session in self.active_sessions.values() if session.is_live)
+        
+        embed = discord.Embed(
+            title="📋 Monitored Synchra Channels",
+            description=f"Bridge Status: {status_icon} `{status_text}`\nTotal Channels: `{len(channels)}`\nLive Channels: `{live_count}`",
+            color=discord.Color.blue()
+        )
+        
+        for uuid_str, data in channels.items():
+            session = self.active_sessions.get(uuid_str)
+            status = "🟢 LIVE" if session and session.is_live else "🔴 Offline"
+            platforms = ", ".join(session.platform_names) if session else "Unknown"
+            
+            value = f"**Status**: {status}\n**Platforms**: {platforms}\n**UUID**: `{uuid_str}`"
+            embed.add_field(name=data["display_name"], value=value, inline=False)
+        
+        await ctx.send(embed=embed)
+
+    async def _show_owner_info(self, ctx: commands.Context):
+        """Show comprehensive account info for bot owner."""
         if not self.api.is_ready:
             return await ctx.send(error("Synchra API is not initialized. Check [p]synchra set."))
-            
-        user = await self.api.get_user_info()
-        if not user:
-            return await ctx.send(warning("Could not fetch user info for this Synchra token."))
-            
+        
+        status_icon = "🟢" if self.api.is_connected else "🔴"
+        status_text = "Online" if self.api.is_connected else "Offline"
+        channels = await self.config.monitored_channels()
+        live_count = sum(1 for session in self.active_sessions.values() if session.is_live)
+        
+        # Main embed with summary
         embed = discord.Embed(
-            title="🔗 Synchra Account Verification",
-            description="Use this information to verify your account in the Synchra Dashboard.",
+            title="� Synchra Bridge - Owner Panel",
+            description=f"**Bridge Status**: {status_icon} `{status_text}`\n**Total Channels**: `{len(channels)}`\n**Live Channels**: `{live_count}`",
             color=await ctx.embed_color()
         )
-        embed.add_field(name="Username", value=f"`{user.get('username', 'N/A')}`", inline=True)
-        embed.add_field(name="User ID", value=f"`{user.get('id', 'N/A')}`", inline=True)
         
-        # Avoid showing email publicly unless explicitly asked
-        email = user.get('email')
-        if email:
-            embed.add_field(name="Email", value=f"||{email}||", inline=False)
+        # Account Information Section
+        user = await self.api.get_user_info()
+        if user:
+            account_info = (
+                f"**Username**: `{user.get('username', 'N/A')}`\n"
+                f"**User ID**: `{user.get('id', 'N/A')}`"
+            )
+            email = user.get('email')
+            if email:
+                account_info += f"\n**Email**: ||{email}||"
+            embed.add_field(name="🔗 Account Verification", value=account_info, inline=False)
+        else:
+            embed.add_field(name="⚠️ Account Info", value="Could not fetch user info for this Synchra token.", inline=False)
+        
+        # User Providers Section
+        providers = await self.api.get_user_providers()
+        if providers:
+            provider_list = []
+            for p in providers:
+                p_id = p.get("id")
+                p_type = p.get("provider_type", "Unknown").capitalize()
+                p_name = p.get("display_name") or p.get("provider_channel_name") or "Unnamed"
+                is_active = str(p_id) == str(self.user_provider_id)
+                status_emoji = "✅" if is_active else "🔗"
+                provider_list.append(f"{status_emoji} **{p_type}**: {p_name} (`{p_id}`)")
+            
+            embed.add_field(
+                name="👤 Linked Providers", 
+                value="\n".join(provider_list), 
+                inline=False
+            )
+        else:
+            embed.add_field(name="⚠️ Providers", value="No account providers found for this Synchra token.", inline=False)
         
         await ctx.send(embed=embed)
 
@@ -499,23 +547,6 @@ class Synchra(commands.Cog):
         
         await ctx.send(error(f"Channel not found in monitoring list."))
 
-    @synchra_cmd.command(name="list")
-    async def list(self, ctx):
-        """List all monitored channels."""
-        channels = await self.config.monitored_channels()
-        if not channels:
-            return await ctx.send("No channels are being monitored.")
-            
-        embed = discord.Embed(title="Monitored Synchra Channels", color=discord.Color.blue())
-        for uuid_str, data in channels.items():
-            session = self.active_sessions.get(uuid_str)
-            status = "🟢 LIVE" if session and session.is_live else "🔴 Offline"
-            platforms = ", ".join(session.platform_names) if session else "Unknown"
-            
-            value = f"**Status**: {status}\n**Platforms**: {platforms}\n**UUID**: `{uuid_str}`"
-            embed.add_field(name=data["display_name"], value=value, inline=False)
-        
-        await ctx.send(embed=embed)
 
     @synchra_cmd.command(name="migrate")
     @checks.is_owner()
