@@ -12,6 +12,7 @@ from redbot.core.utils.chat_formatting import success, error, warning, info
 from .session import SynchraSession
 from .utils.api_manager import SynchraAPIManager
 from .utils.ws_handler import SynchraWSHandler
+from .utils.webhooks import ensure_webhook, send_webhook_message
 from .voice_handler import SynchraVoiceHandler
 
 log = logging.getLogger("red.blu.synchra_bridge")
@@ -37,6 +38,7 @@ class Synchra(commands.Cog):
         # Runtime State
         self.active_sessions: Dict[str, SynchraSession] = {} # {uuid_str: session}
         self.ws_queue = asyncio.Queue()
+        self.user_provider_id: Optional[UUID] = None # Sender for chat mirroring
         
         # Tasks
         self._main_loop_task: Optional[asyncio.Task] = None
@@ -46,17 +48,49 @@ class Synchra(commands.Cog):
     async def cog_load(self):
         """Initialize the cog and start background tasks."""
         if await self.api.initialize():
+            # Resolve user provider for outgoing chat
+            user_providers = await self.api.get_user_providers()
+            if user_providers:
+                self.user_provider_id = UUID(user_providers[0]['id'])
+                log.info(f"Resolved user_provider_id: {self.user_provider_id}")
+            else:
+                log.warning("No linked providers found for Synchra account. Outgoing chat disabled.")
+
             # Initialize WS
             self.ws = SynchraWSHandler(self.api, self.ws_queue)
             await self.ws.start()
             
+            # Initialize sessions from config
+            monitored = await self.config.monitored_channels()
+            for uuid_str, data in monitored.items():
+                session = SynchraSession(
+                    channel_uuid=UUID(uuid_str),
+                    display_name=data.get("display_name", "Unknown"),
+                    text_channel_id=data.get("text_channel_id"),
+                    voice_channel_id=data.get("voice_channel_id"),
+                    webhook_url=data.get("webhook_url"),
+                    voice_enabled=data.get("voice_enabled", True),
+                    chat_enabled=data.get("chat_enabled", True),
+                    last_live=data.get("last_live", 0)
+                )
+                self.active_sessions[uuid_str] = session
+                
+                # Try to resolve/re-create webhook if missing
+                if session.text_channel_id and not session.webhook_url:
+                    channel = self.bot.get_channel(session.text_channel_id)
+                    if channel and isinstance(channel, discord.TextChannel):
+                        session.webhook_url = await ensure_webhook(channel)
+
+                if self.ws:
+                    await self.ws.subscribe(session.channel_uuid)
+
             # Start background tasks
             self._main_loop_task = self.bot.loop.create_task(self._main_monitor_loop())
             self._ws_event_task = self.bot.loop.create_task(self._process_ws_events())
             self._initialized = True
             log.info("SynchraBridge initialized.")
         else:
-            log.warning("SynchraBridge loaded but credentials are missing. Use [p]synchra set to configure.")
+            log.warning("SynchraBridge loaded but credentials missing. Use [p]synchra set.")
 
     def cog_unload(self):
         """Cleanup resources on unload."""
@@ -90,22 +124,23 @@ class Synchra(commands.Cog):
                     continue
                 
                 session = self.active_sessions[str(channel_id)]
+                data = event.get("data", {})
                 
                 if etype == "ws_status":
-                    is_live = event.get("is_live", False)
+                    is_live = data.get("is_live", False)
                     if is_live:
                         # Fetch fresh providers for metadata
-                        providers = await self.api.get_providers(session.channel_uuid)
-                        await self._handle_go_live(session, providers)
+                        session.providers = await self.api.get_providers(session.channel_uuid)
+                        await self._handle_go_live(session, session.providers)
                     else:
                         await self._handle_go_offline(session)
                 
-                elif etype == "ws_activity":
-                    # Potentially handle follows/subs notifications here
-                    pass
-                
                 elif etype == "chat_message":
-                    # Handle chat synchronization
+                    # incoming chat mirroring
+                    await self._mirror_chat_incoming(session, data)
+                
+                elif etype == "activity":
+                    # Handle status and activity updates
                     pass
                 
                 self.ws_queue.task_done()
@@ -114,6 +149,72 @@ class Synchra(commands.Cog):
             except Exception as e:
                 log.error(f"Error in WS event processor: {e}")
                 await asyncio.sleep(1)
+
+    async def _mirror_chat_incoming(self, session: SynchraSession, data: Dict):
+        """Relay platform chat to Discord using webhooks or standard messages."""
+        if not session.chat_enabled or not session.text_channel_id:
+            return
+            
+        channel = self.bot.get_channel(session.text_channel_id)
+        if not channel: return
+
+        # Format: [Platform] User: Message
+        provider = data.get('provider', 'synchra')
+        if hasattr(provider, 'value'): provider = provider.value
+        
+        user = data.get('viewer_display_name', 'System')
+        avatar = data.get('viewer_avatar_url')
+        
+        # Extract message text from parts for better formatting
+        parts = data.get('message_parts', [])
+        content = "".join([p.get('text', '') for p in parts]) or data.get('message', '')
+        
+        if content:
+            # Use Webhook if available
+            if session.webhook_url:
+                success = await send_webhook_message(
+                    url=session.webhook_url,
+                    content=content,
+                    username=f"[{str(provider).capitalize()}] {user}",
+                    avatar_url=avatar
+                )
+                if success:
+                    return
+
+            # Fallback to standard message
+            msg = f"**[{str(provider).capitalize()}]** {user}: {content}"
+            try:
+                await channel.send(msg, allowed_mentions=discord.AllowedMentions.none())
+            except Exception as e:
+                log.error(f"Failed to relay chat to Discord: {e}")
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        """Handle Discord to Platform chat mirroring."""
+        if not self._initialized or not self.user_provider_id:
+            return
+        if message.author.bot or message.content.startswith("!"):
+            return
+            
+        # Check if this message is in a monitored channel
+        for session in self.active_sessions.values():
+            if message.channel.id == session.text_channel_id:
+                if not session.chat_enabled:
+                    continue
+                
+                # Forward to all active providers (except tiktok)
+                for provider in session.providers:
+                    p_type = getattr(provider.provider, 'value', str(provider.provider)).lower()
+                    if p_type == "tiktok":
+                        continue
+                        
+                    # Send to Synchra
+                    await self.api.send_chat_message(
+                        channel_provider_id=str(provider.id),
+                        message=message.content,
+                        user_provider_id=str(self.user_provider_id)
+                    )
+                break
 
     async def _main_monitor_loop(self):
         """Main loop for status polling and session management (Fallback/Integrity check)."""
@@ -130,24 +231,23 @@ class Synchra(commands.Cog):
                 for uuid_str, data in channels.items():
                     # 1. Ensure internal session exists
                     if uuid_str not in self.active_sessions:
-                        session = SynchraSession(
-                            channel_uuid=UUID(uuid_str),
-                            display_name=data.get("display_name", "Unknown"),
-                            platform=data.get("platform", "unknown"),
-                            handle=data.get("handle", "unknown"),
-                            text_channel_id=data.get("text_channel_id"),
-                            voice_channel_id=data.get("voice_channel_id"),
-                            webhook_url=data.get("webhook_url"),
-                            voice_enabled=data.get("voice_enabled", True),
-                            chat_enabled=data.get("chat_enabled", True),
-                            last_live=data.get("last_live", 0)
-                        )
-                        self.active_sessions[uuid_str] = session
-                        # Subscribe via WS
-                        if self.ws:
-                            await self.ws.subscribe(session.channel_uuid)
+                        # ... initialization already handled in cog_load or monitor command ...
+                        pass
+                    
+                    session = self.active_sessions.get(uuid_str)
+                    if not session: continue
 
-                    # 2. Check status (Integrity check / Fallback for WS failures)
+                    # 2. Heal Webhooks
+                    if session.text_channel_id and not session.webhook_url:
+                        channel = self.bot.get_channel(session.text_channel_id)
+                        if channel and isinstance(channel, discord.TextChannel):
+                            session.webhook_url = await ensure_webhook(channel)
+                            if session.webhook_url:
+                                async with self.config.monitored_channels() as cfg_channels:
+                                    if uuid_str in cfg_channels:
+                                        cfg_channels[uuid_str]["webhook_url"] = session.webhook_url
+
+                    # 3. Check status
                     session = self.active_sessions[uuid_str]
                     now = time.time()
                     
@@ -158,8 +258,8 @@ class Synchra(commands.Cog):
                     
                     session.last_status_check = now
                     try:
-                        providers = await self.api.get_providers(session.channel_uuid)
-                        is_currently_live = any(getattr(p, "is_live", False) for p in providers)
+                        session.providers = await self.api.get_providers(session.channel_uuid)
+                        is_currently_live = session.is_currently_live
                         
                         if is_currently_live:
                             await self._handle_go_live(session, providers)
@@ -199,7 +299,11 @@ class Synchra(commands.Cog):
         
         # Start Voice Bridge
         if session.voice_enabled and session.voice_channel_id:
-            session.hls_url = await self.api.get_hls_fallback(session.platform, session.handle)
+            # Pick first provider for HLS if possible, or fallback
+            platform = getattr(live_provider.provider, 'value', str(live_provider.provider)).lower()
+            handle = getattr(live_provider, 'provider_channel_name', session.display_name)
+            
+            session.hls_url = await self.api.get_hls_fallback(platform, handle)
             if session.hls_url:
                 await self.voice.start_voice(session)
 
@@ -255,19 +359,35 @@ class Synchra(commands.Cog):
         if not channel:
             return await ctx.send(error(f"Could not find a Synchra channel for **{platform}** / **{handle}**.\nMake sure you've added this provider to your Synchra account."))
 
+        # Initialize webhook
+        webhook_url = await ensure_webhook(text_channel)
+
         uuid_str = str(channel.id)
         async with self.config.monitored_channels() as channels:
             channels[uuid_str] = {
-                "display_name": channel.display_name,
-                "platform": platform.lower(),
-                "handle": handle,
+                "display_name": channel.display_name or channel.name,
                 "text_channel_id": text_channel.id,
                 "voice_channel_id": voice_channel.id if voice_channel else None,
                 "voice_enabled": True if voice_channel else False,
                 "chat_enabled": True,
-                "last_live": 0
+                "last_live": 0,
+                "webhook_url": webhook_url
             }
         
+        # Create session
+        session = SynchraSession(
+            channel_uuid=channel.id,
+            display_name=channel.display_name or channel.name,
+            text_channel_id=text_channel.id,
+            voice_channel_id=voice_channel.id if voice_channel else None,
+            webhook_url=webhook_url
+        )
+        session.providers = await self.api.get_providers(channel.id)
+        self.active_sessions[uuid_str] = session
+        
+        if self.ws:
+            await self.ws.subscribe(session.channel_uuid)
+
         await ctx.send(success(f"Now monitoring **{channel.display_name}**! UUID: `{uuid_str}`"))
 
     @synchra_cmd.command(name="stop")
@@ -277,7 +397,7 @@ class Synchra(commands.Cog):
         found_uuid = None
         async with self.config.monitored_channels() as channels:
             for uuid_str, data in channels.items():
-                if uuid_str == channel_id_or_handle or data["handle"].lower() == channel_id_or_handle.lower():
+                if uuid_str == channel_id_or_handle:
                     found_uuid = uuid_str
                     break
             
@@ -303,8 +423,10 @@ class Synchra(commands.Cog):
         embed = discord.Embed(title="Monitored Synchra Channels", color=discord.Color.blue())
         for uuid_str, data in channels.items():
             session = self.active_sessions.get(uuid_str)
-            status = "🔴 Live" if session and session.is_live else "⚫ Offline"
-            value = f"Status: {status}\nPlatform: {data['platform'].capitalize()}\nHandle: `{data['handle']}`"
+            status = "🟢 LIVE" if session and session.is_live else "🔴 Offline"
+            platforms = ", ".join(session.platform_names) if session else "Unknown"
+            
+            value = f"**Status**: {status}\n**Platforms**: {platforms}\n**UUID**: `{uuid_str}`"
             embed.add_field(name=data["display_name"], value=value, inline=False)
         
         await ctx.send(embed=embed)
@@ -332,9 +454,7 @@ class Synchra(commands.Cog):
                     uuid_str = str(channel.id)
                     async with self.config.monitored_channels() as new_channels:
                         new_channels[uuid_str] = {
-                            "display_name": channel.display_name,
-                            "platform": platform,
-                            "handle": handle,
+                            "display_name": channel.display_name or channel.name,
                             "text_channel_id": data.get("text_channel_id"),
                             "voice_channel_id": data.get("voice_channel_id"),
                             "voice_enabled": data.get("voice_enabled", True),

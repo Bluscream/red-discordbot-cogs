@@ -30,7 +30,7 @@ class SynchraWSHandler:
         async def on_activity(event):
             await self._handle_activity(event)
 
-        @self.api.client.ws.on("chat")
+        @self.api.client.ws.on("chat_message")
         async def on_chat(event):
             await self._handle_chat(event)
 
@@ -63,7 +63,7 @@ class SynchraWSHandler:
         self.log.info(f"Subscribing to WS events for channel: {channel_uuid}")
         try:
             await self.api.client.ws.subscribe("activity", channel_uuid)
-            await self.api.client.ws.subscribe("chat", channel_uuid)
+            await self.api.client.ws.subscribe("chat_message", channel_uuid)
             await self.api.client.ws.subscribe("status", channel_uuid)
             self._subscriptions.add(channel_uuid)
         except Exception as e:
@@ -74,7 +74,7 @@ class SynchraWSHandler:
         if not self.api.is_ready: return
         try:
             await self.api.client.ws.unsubscribe("activity", channel_uuid)
-            await self.api.client.ws.unsubscribe("chat", channel_uuid)
+            await self.api.client.ws.unsubscribe("chat_message", channel_uuid)
             await self.api.client.ws.unsubscribe("status", channel_uuid)
             self._subscriptions.discard(channel_uuid)
         except Exception as e:
@@ -82,46 +82,36 @@ class SynchraWSHandler:
 
     async def _handle_status(self, event: Dict[str, Any]):
         """Handle stream status changes (online/offline)."""
-        data = event.get("data", {})
         channel_id = event.get("channel_id")
         if not channel_id: return
 
-        is_live = data.get("is_live", False)
+        is_live = event.get("data", {}).get("is_live", False)
         self.log.info(f"WS Status Update: {channel_id} is now {'LIVE' if is_live else 'OFFLINE'}")
         
         await self.action_queue.put({
             "type": "ws_status",
             "channel_id": channel_id,
-            "is_live": is_live,
-            "payload": event
+            "data": event.get("data", {})
         })
 
     async def _handle_activity(self, event: Dict[str, Any]):
         """Handle incoming activity events (follows, subs, etc.)."""
-        data = event.get("data", {})
         channel_id = event.get("channel_id")
         if not channel_id: return
 
-        self.log.debug(f"Received WS activity: {data.get('type')} for {channel_id}")
         await self.action_queue.put({
-            "type": "ws_activity", 
+            "type": "activity", 
             "channel_id": channel_id,
-            "payload": event
+            "data": event.get("data", {})
         })
 
     async def _handle_chat(self, event: Dict[str, Any]):
         """Handle incoming chat messages for synchronization."""
-        data = event.get("data", {})
         channel_id = event.get("channel_id")
-        if not data or not channel_id: return
+        if not channel_id: return
         
         await self.action_queue.put({
             "type": "chat_message",
             "channel_id": channel_id,
-            "payload": {
-                "platform": data.get("provider", "unknown"),
-                "author": data.get("viewer_display_name") or data.get("viewer_name"),
-                "message": data.get("message"),
-                "raw_event": event
-            }
+            "data": event.get("data", {})
         })

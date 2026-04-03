@@ -53,6 +53,29 @@ class SynchraAPIManager:
     def is_ready(self) -> bool:
         return self._initialized and self.client is not None
 
+    async def get_user_providers(self) -> List[Dict[str, Any]]:
+        """Fetch providers linked to the authenticated user account."""
+        if not self.is_ready: return []
+        try:
+            return await self.client.http.get("/api/2/user/providers")
+        except Exception as e:
+            log.error(f"Error fetching user providers: {e}")
+            return []
+
+    async def send_chat_message(self, channel_provider_id: str, message: str, user_provider_id: str):
+        """Send a chat message via Synchra."""
+        if not self.is_ready: return
+        try:
+            data = {
+                "user_provider_id": str(user_provider_id),
+                "channel_provider_id": str(channel_provider_id),
+                "message": message
+            }
+            return await self.client.http.post("/api/2/chat/messages", json=data)
+        except Exception as e:
+            log.error(f"Error sending chat message: {e}")
+            return None
+
     async def get_channel_by_uuid(self, uuid: Union[str, UUID]) -> Optional[Channel]:
         """Fetch a channel by its Synchra UUID."""
         if not self.is_ready: return None
@@ -66,7 +89,6 @@ class SynchraAPIManager:
         """Look up a channel UUID using platform and handle."""
         if not self.is_ready: return None
         try:
-            # Synchra list() supports filtering by provider and provider_channel_name
             channels = await self.client.channels.list(
                 provider=platform.lower(),
                 provider_channel_name=handle
@@ -87,10 +109,7 @@ class SynchraAPIManager:
             return []
             
     async def get_hls_fallback(self, platform: str, handle: str) -> Optional[str]:
-        """
-        Fallback HLS resolution using yt-dlp.
-        Called if Synchra doesn't provide a direct stream URL.
-        """
+        """Fallback HLS resolution using yt-dlp."""
         import asyncio
         platform = platform.lower()
         url_map = {
@@ -101,11 +120,8 @@ class SynchraAPIManager:
         }
         
         target_url = url_map.get(platform)
-        if not target_url:
-            log.debug(f"No HLS mapping for platform: {platform}")
-            return None
+        if not target_url: return None
 
-        # Call yt-dlp asynchronously
         cmd = ["yt-dlp", "-g", "--format", "best", "--no-warnings", target_url]
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -115,18 +131,7 @@ class SynchraAPIManager:
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
             if proc.returncode == 0:
-                hls_url = stdout.decode().strip()
-                if hls_url:
-                    log.debug(f"Resolved HLS for {handle} ({platform}): {hls_url[:50]}...")
-                    return hls_url
-            else:
-                err_msg = stderr.decode().strip()
-                log.warning(f"yt-dlp failed for {handle} ({platform}): {err_msg[:100]}")
-        except asyncio.TimeoutError:
-            log.error(f"yt-dlp timed out resolving {handle}")
-            try: proc.kill()
-            except: pass
-        except Exception as e:
-            log.error(f"yt-dlp error for {handle}: {e}")
-        
+                return stdout.decode().strip()
+        except:
+            pass
         return None
