@@ -104,13 +104,14 @@ class SynchraActionQueue:
                             log.error(f"Channel send error: {e}")
 
                     elif atype == "synchra_chat":
-                        channel_uuid = payload.get("channel_uuid")
+                        channel_provider_id = payload.get("channel_provider_id")
                         message = payload.get("message")
-                        # Note: This calls the Synchra API
-                        try:
-                            await self.api.send_chat_message(channel_uuid, message)
-                        except Exception as e:
-                            log.error(f"Synchra broadcast error: {e}")
+                        user_provider_id = payload.get("user_provider_id")
+                        if channel_provider_id and message and user_provider_id:
+                            try:
+                                await self.api.send_chat_message(channel_provider_id, message, user_provider_id)
+                            except Exception as e:
+                                log.error(f"Synchra broadcast error: {e}")
 
                     elif atype == "status":
                         channel_id = payload.get("channel_id")

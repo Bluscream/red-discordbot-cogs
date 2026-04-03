@@ -228,8 +228,9 @@ class Synchra(commands.Cog):
                     await self.action_queue.put({
                         "type": "synchra_chat",
                         "payload": {
-                            "channel_uuid": str(provider.id),
-                            "message": f"[{message.author.display_name}] {message.clean_content}"
+                            "channel_provider_id": str(provider.id),
+                            "message": f"[{message.author.display_name}] {message.clean_content}",
+                            "user_provider_id": str(self.user_provider_id)
                         }
                     })
                 break
