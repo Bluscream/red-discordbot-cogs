@@ -104,8 +104,8 @@ class Synchra(commands.Cog):
 
     def cog_unload(self):
         """Cleanup resources on unload."""
-        if self.monitor_task:
-            self.monitor_task.cancel()
+        if self._main_loop_task:
+            self._main_loop_task.cancel()
         if self._ws_event_task:
             self._ws_event_task.cancel()
         

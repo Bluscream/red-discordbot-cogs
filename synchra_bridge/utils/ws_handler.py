@@ -12,9 +12,7 @@ class SynchraWSHandler:
         self.action_queue = action_queue
         self.log = logging.getLogger("red.blu.synchra_bridge.ws")
         self._running = False
-        self._task: Optional[asyncio.Task] = None
         self._subscriptions: Set[UUID] = set()
-        self.retry = StaggeredRetry(start=30.0, multiplier=1.25, max_val=600.0)
 
     async def start(self):
         """Start the WebSocket client and register handlers."""
@@ -26,46 +24,34 @@ class SynchraWSHandler:
             return
 
         self._running = True
-        self._task = asyncio.create_task(self._connect_loop())
-        self.log.info("Synchra WebSocket supervisor started.")
+        
+        # Register permanent handlers
+        @self.api.client.ws.on("activity")
+        async def on_activity(event): await self._handle_activity(event)
 
-    async def _connect_loop(self):
-        """Background loop to ensure the WebSocket stays connected and subscribed."""
-        while self._running:
-            if not self.api.is_ready:
-                await asyncio.sleep(60)
-                continue
+        @self.api.client.ws.on("chat_message")
+        async def on_chat(event): await self._handle_chat(event)
 
-            try:
-                # Register event handlers
-                @self.api.client.ws.on("activity")
-                async def on_activity(event): await self._handle_activity(event)
+        @self.api.client.ws.on("status")
+        async def on_status(event): await self._handle_status(event)
 
-                @self.api.client.ws.on("chat_message")
-                async def on_chat(event): await self._handle_chat(event)
-
-                @self.api.client.ws.on("status")
-                async def on_status(event): await self._handle_status(event)
-
-                # Attempt connection
-                self.log.debug("Attempting to connect to Synchra WebSocket...")
-                await self.api.client.connect()
+        @self.api.client.ws.on("connect")
+        async def on_connect():
+            self.log.info("Synchra WebSocket connected. Re-applying subscriptions...")
+            # Re-apply all pending subscriptions
+            for channel_uuid in list(self._subscriptions):
+                await self._do_subscribe(channel_uuid)
                 
-                # Connection successful! Reset retry and re-subscribe
-                self.log.info("Synchra WebSocket connected.")
-                self.retry.reset()
-                
-                # Re-apply all pending subscriptions
-                for channel_uuid in list(self._subscriptions):
-                    await self._do_subscribe(channel_uuid)
+        @self.api.client.ws.on("disconnect")
+        async def on_disconnect():
+            self.log.warning("Synchra WebSocket disconnected.")
 
-                # Wait for connection to drop or stop
-                while self._running and self.api.client.ws.is_connected:
-                    await asyncio.sleep(10)
-
-            except Exception as e:
-                self.log.error(f"Synchra WebSocket error: {e}")
-                await self.retry.sleep()
+        # Let the SDK handle the connection and its own internal reconnection
+        try:
+            await self.api.client.connect()
+            self.log.info("Synchra WebSocket connection initiated.")
+        except Exception as e:
+            self.log.error(f"Failed to initiate Synchra WS connection: {e}")
 
     async def _do_subscribe(self, channel_uuid: UUID):
         """Internal subscription helper."""
@@ -80,9 +66,6 @@ class SynchraWSHandler:
     async def stop(self):
         """Stop the WebSocket client."""
         self._running = False
-        if self._task:
-            self._task.cancel()
-            self._task = None
         
         if self.api.client:
             try:
@@ -98,9 +81,8 @@ class SynchraWSHandler:
         self.log.info(f"Adding subscription to {channel_uuid}")
         self._subscriptions.add(channel_uuid)
         
-        # Only subscribe immediately if already connected
-        if getattr(self.api.client.ws, "is_connected", False):
-            await self._do_subscribe(channel_uuid)
+        # We always call _do_subscribe; if not connected, the SDK will queue it or we'll retry on 'connect'
+        await self._do_subscribe(channel_uuid)
 
     async def unsubscribe(self, channel_uuid: UUID):
         """Unsubscribe from events for a channel."""
