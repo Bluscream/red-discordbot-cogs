@@ -15,6 +15,7 @@ class SynchraActionQueue:
         self.bot = bot
         self.api = api_manager
         self.voice = voice_handler
+        self.delay = 1.0 # Default delay between actions (seconds)
         self.queue = asyncio.Queue()
         self.last_status_update: Dict[int, float] = {}
         self._last_webhook_profile: Dict[str, Dict[str, Any]] = {} # url -> {nick, avatar}
@@ -112,14 +113,17 @@ class SynchraActionQueue:
                     elif atype == "status":
                         channel_id = payload.get("channel_id")
                         text = payload.get("text")
-                        channel = self.bot.get_channel(channel_id)
-                        if channel and hasattr(channel, "edit"):
-                            now = self.bot.loop.time()
-                            last_upd = self.last_status_update.get(channel_id, 0)
-                            if now - last_upd >= 15:
+                        
+                        last_text = self.last_status_update.get(channel_id)
+                        if text == last_text:
+                            # Skip if status is exactly the same as last set
+                            pass
+                        else:
+                            channel = self.bot.get_channel(channel_id)
+                            if channel and hasattr(channel, "edit"):
                                 try:
                                     await channel.edit(status=text)
-                                    self.last_status_update[channel_id] = now
+                                    self.last_status_update[channel_id] = text
                                 except Exception as e:
                                     log.warning(f"Failed to set VR status: {e}")
 
@@ -150,4 +154,4 @@ class SynchraActionQueue:
                     if action is not None:
                         self.queue.task_done()
                     # Unified mandatory delay to prevent spamming any platform
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(1.0)
