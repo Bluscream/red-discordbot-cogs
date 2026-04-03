@@ -13,6 +13,7 @@ from .session import SynchraSession
 from .utils.api_manager import SynchraAPIManager
 from .utils.ws_handler import SynchraWSHandler
 from .utils.webhooks import ensure_webhook, send_webhook_message
+from .utils.formatting import sanitize_mentions, clean_name
 from .voice_handler import SynchraVoiceHandler
 
 log = logging.getLogger("red.blu.synchra_bridge")
@@ -162,7 +163,7 @@ class Synchra(commands.Cog):
         provider = data.get('provider', 'synchra')
         if hasattr(provider, 'value'): provider = provider.value
         
-        user = data.get('viewer_display_name', 'System')
+        user = clean_name(data.get('viewer_display_name', 'System'))
         avatar = data.get('viewer_avatar_url')
         
         # Extract message text from parts for better formatting
@@ -170,6 +171,7 @@ class Synchra(commands.Cog):
         content = "".join([p.get('text', '') for p in parts]) or data.get('message', '')
         
         if content:
+            content = sanitize_mentions(content)
             # Use Webhook if available
             if session.webhook_url:
                 success = await send_webhook_message(
@@ -283,8 +285,8 @@ class Synchra(commands.Cog):
         
         # Get live provider for metadata
         live_provider = next((p for p in providers if getattr(p, "is_live", False)), providers[0])
-        title = getattr(live_provider, "title", "Live Broadcast")
-        game = getattr(live_provider, "game_name", "")
+        title = sanitize_mentions(getattr(live_provider, "title", "Live Broadcast"))
+        game = sanitize_mentions(getattr(live_provider, "game_name", ""))
         
         # Notify text channel
         description = f"**{session.display_name}** is now live!"
@@ -359,13 +361,15 @@ class Synchra(commands.Cog):
         if not channel:
             return await ctx.send(error(f"Could not find a Synchra channel for **{platform}** / **{handle}**.\nMake sure you've added this provider to your Synchra account."))
 
+        display_name = clean_name(channel.display_name or channel.name)
+        
         # Initialize webhook
         webhook_url = await ensure_webhook(text_channel)
 
         uuid_str = str(channel.id)
         async with self.config.monitored_channels() as channels:
             channels[uuid_str] = {
-                "display_name": channel.display_name or channel.name,
+                "display_name": display_name,
                 "text_channel_id": text_channel.id,
                 "voice_channel_id": voice_channel.id if voice_channel else None,
                 "voice_enabled": True if voice_channel else False,
@@ -377,7 +381,7 @@ class Synchra(commands.Cog):
         # Create session
         session = SynchraSession(
             channel_uuid=channel.id,
-            display_name=channel.display_name or channel.name,
+            display_name=display_name,
             text_channel_id=text_channel.id,
             voice_channel_id=voice_channel.id if voice_channel else None,
             webhook_url=webhook_url
