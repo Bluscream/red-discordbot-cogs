@@ -5,7 +5,7 @@ import httpx
 
 # The Synchra SDK (v2.0)
 from synchra import SynchraClient
-from synchra.models.resources import Channel, ChannelProvider
+from synchra.models import ChannelRecord, ChannelProvider, User
 
 log = logging.getLogger("red.blu.synchra_bridge.api")
 
@@ -57,9 +57,18 @@ class SynchraAPIManager:
     @property
     def is_connected(self) -> bool:
         """Whether the underlying SDK has an active WebSocket session."""
-        return self.client is not None and self.client.is_ready
+        return self.client is not None and self.client.ws.is_connected
 
-    async def get_user_providers(self) -> List[Dict[str, Any]]:
+    async def get_user_info(self) -> Optional[User]:
+        """Fetch basic profile info for the current user."""
+        if not self.is_ready: return None
+        try:
+            return await self.client.user.get_info()
+        except Exception as e:
+            log.error(f"Error fetching user info: {e}")
+            return None
+
+    async def get_user_providers(self) -> List[Any]:
         """Fetch providers linked to the authenticated user account."""
         if not self.is_ready: return []
         try:
@@ -67,15 +76,6 @@ class SynchraAPIManager:
         except Exception as e:
             log.error(f"Error fetching user providers: {e}")
             return []
-
-    async def get_user_info(self) -> Dict[str, Any]:
-        """Fetch basic profile info for the current user."""
-        if not self.is_ready: return {}
-        try:
-            return await self.client.user.get_info()
-        except Exception as e:
-            log.error(f"Error fetching user info: {e}")
-            return {}
 
     async def send_chat_message(self, channel_provider_id: str, message: str, user_provider_id: str):
         """Send a chat message to a specific provider via Synchra."""
@@ -95,25 +95,7 @@ class SynchraAPIManager:
             log.error(f"Error broadcasting chat message: {e}")
             return None
 
-    async def get_user_info(self):
-        """Fetch basic profile info for the authenticated user from Synchra."""
-        if not self.is_ready: return None
-        try:
-            return await self.client.user.get_info()
-        except Exception as e:
-            log.error(f"Error fetching Synchra user info: {e}")
-            return None
-
-    async def list_user_providers(self):
-        """Fetch all linked platform providers for the authenticated user."""
-        if not self.is_ready: return []
-        try:
-            return await self.client.user.list_providers()
-        except Exception as e:
-            log.error(f"Error listing Synchra user providers: {e}")
-            return []
-
-    async def get_channel_by_uuid(self, uuid: Union[str, UUID]) -> Optional[Channel]:
+    async def get_channel_by_uuid(self, uuid: Union[str, UUID]) -> Optional[ChannelRecord]:
         """Fetch a channel by its Synchra UUID."""
         if not self.is_ready: return None
         try:
@@ -122,7 +104,7 @@ class SynchraAPIManager:
             log.error(f"Error fetching channel {uuid}: {e}")
             return None
 
-    async def lookup_channel(self, platform: str, handle: str) -> Optional[Channel]:
+    async def lookup_channel(self, platform: str, handle: str) -> Optional[ChannelRecord]:
         """Look up a channel UUID using platform and handle."""
         if not self.is_ready: return None
         try:

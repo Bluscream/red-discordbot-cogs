@@ -1,7 +1,10 @@
 from dataclasses import dataclass, field
-from typing import Optional, Any, List
+from typing import Optional, Any, List, TYPE_CHECKING
 from uuid import UUID
 import time
+
+if TYPE_CHECKING:
+    from synchra.models import ChannelProvider
 
 @dataclass
 class SynchraSession:
@@ -25,7 +28,7 @@ class SynchraSession:
     last_notified_is_live: Optional[bool] = None
     
     # Multi-Platform Support
-    providers: List[Any] = field(default_factory=list) # List[ChannelProvider]
+    providers: List["ChannelProvider"] = field(default_factory=list)
     hls_url: Optional[str] = None
     voice_client: Optional[Any] = None
     
@@ -40,9 +43,9 @@ class SynchraSession:
     @property
     def platform_names(self) -> List[str]:
         """Returns a list of platform names (e.g., ['Twitch', 'YouTube'])."""
-        return [getattr(p.provider, 'value', str(p.provider)).capitalize() for p in self.providers]
+        return [p.provider.value.capitalize() for p in self.providers]
 
     @property
     def is_currently_live(self) -> bool:
         """Returns True if any associated provider is currently live."""
-        return any(getattr(p, 'is_live', False) for p in self.providers)
+        return any(p.stream_live for p in self.providers)

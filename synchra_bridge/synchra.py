@@ -18,6 +18,9 @@ from .utils.action_queue import SynchraActionQueue
 from .utils.retry import StaggeredRetry
 from .voice_handler import SynchraVoiceHandler
 
+# SDK Models
+from synchra.models import ChannelRecord, ChannelProvider, User, UserProviderPublic
+
 log = logging.getLogger("red.blu.synchra_bridge")
 
 class Synchra(commands.Cog):
@@ -97,15 +100,13 @@ class Synchra(commands.Cog):
             # Fetch and log Synchra user profile info
             user_info = await self.api.get_user_info()
             if user_info:
-                username = user_info.get("username", "Unknown")
-                uid = user_info.get("id", "Unknown")
-                log.info(f"Authenticated with Synchra as: {username} ({uid})")
+                log.info(f"[SynchraBridge] Authenticated as {user_info.username} ({user_info.id})")
+                log.info(f"[SynchraBridge] Monitoring {len(self.active_sessions)} targets across {sum(len(s.providers) for s in self.active_sessions.values())} platforms.")
 
             # Start background tasks
             self._main_loop_task = self.bot.loop.create_task(self._main_monitor_loop())
             self._ws_event_task = self.bot.loop.create_task(self._process_ws_events())
             self._initialized = True
-            log.info(f"SynchraBridge initialized. Monitoring {len(self.active_sessions)} channels.")
         else:
             log.warning("SynchraBridge loaded but credentials missing. Use [p]synchra set.")
 
@@ -372,14 +373,25 @@ class Synchra(commands.Cog):
 
         # Determine what to show based on caller permissions
         if await self.bot.is_owner(ctx.author):
-            # Owner gets comprehensive account info
             await self._show_owner_info(ctx)
         elif ctx.channel.permissions_for(ctx.author).manage_guild:
-            # Admin gets monitored channels list
             await self._show_channels_list(ctx)
         else:
-            # Regular users get basic status
             await self._show_basic_status(ctx)
+
+    @synchra_cmd.command(name="list", aliases=["ls", "channels"])
+    async def list_channels(self, ctx: commands.Context):
+        """List all monitored channels and their status."""
+        if not await self.bot.is_owner(ctx.author) and not ctx.channel.permissions_for(ctx.author).manage_guild:
+            return await ctx.send(error("You do not have permission to view the monitoring list."))
+        await self._show_channels_list(ctx)
+
+    @synchra_cmd.command(name="userinfo", aliases=["ui", "account", "me"])
+    async def userinfo(self, ctx: commands.Context):
+        """Show information about the linked Synchra account."""
+        if not await self.bot.is_owner(ctx.author):
+            return await ctx.send(error("Only the bot owner can view account details."))
+        await self._show_owner_info(ctx)
     async def _show_basic_status(self, ctx: commands.Context):
         """Show basic status for regular users."""
         status_icon = "🟢" if self.api.is_connected else "🔴"
@@ -395,8 +407,8 @@ class Synchra(commands.Cog):
 
     async def _show_channels_list(self, ctx: commands.Context):
         """Show monitored channels list for admins."""
-        channels = await self.config.monitored_channels()
-        if not channels:
+        channels_cfg = await self.config.monitored_channels()
+        if not channels_cfg:
             embed = discord.Embed(
                 title="📋 Monitored Synchra Channels",
                 description="No channels are being monitored.",
@@ -410,53 +422,24 @@ class Synchra(commands.Cog):
         
         embed = discord.Embed(
             title="📋 Monitored Synchra Channels",
-            description=f"Bridge Status: {status_icon} `{status_text}`\nTotal Channels: `{len(channels)}`\nLive Channels: `{live_count}`",
+            description=f"Bridge Status: {status_icon} `{status_text}`\nTotal Channels: `{len(channels_cfg)}`\nLive Channels: `{live_count}`",
             color=discord.Color.blue()
         )
         
-        for uuid_str, data in channels.items():
+        for uuid_str, data in channels_cfg.items():
             session = self.active_sessions.get(uuid_str)
             status = "🟢 LIVE" if session and session.is_live else "🔴 Offline"
             
-            # Get platform names with better error handling
             platforms = "Unknown"
             if session and session.providers:
-                platform_names = []
-                for provider in session.providers:
-                    # Handle provider enum from Synchra SDK
-                    provider_field = getattr(provider, 'provider', None)
-                    if provider_field:
-                        if hasattr(provider_field, 'value'):
-                            # It's an enum, get the string value
-                            platform_names.append(str(provider_field.value).capitalize())
-                        elif isinstance(provider_field, str):
-                            # It's already a string
-                            platform_names.append(provider_field.capitalize())
-                        else:
-                            # Convert to string and capitalize
-                            platform_names.append(str(provider_field).capitalize())
-                    else:
-                        # Try other possible field names
-                        provider_type = (getattr(provider, 'type', None) or
-                                       getattr(provider, 'platform', None) or
-                                       getattr(provider, 'provider_type', None))
-                        if provider_type:
-                            if hasattr(provider_type, 'value'):
-                                platform_names.append(str(provider_type.value).capitalize())
-                            else:
-                                platform_names.append(str(provider_type).capitalize())
-                
-                if platform_names:
-                    platforms = ", ".join(platform_names)
+                platforms = ", ".join([p.provider.value.capitalize() for p in session.providers])
             
-            # Build detailed channel information
             details = []
             details.append(f"**Status**: {status}")
             details.append(f"**Platforms**: {platforms}")
             details.append(f"**UUID**: `{uuid_str}`")
             
             if session:
-                # Discord channel info
                 if session.text_channel_id:
                     text_channel = self.bot.get_channel(session.text_channel_id)
                     text_name = text_channel.name if text_channel else f"ID: {session.text_channel_id}"
@@ -467,29 +450,25 @@ class Synchra(commands.Cog):
                     voice_name = voice_channel.name if voice_channel else f"ID: {session.voice_channel_id}"
                     details.append(f"**Voice Channel**: 🔊 {voice_name}")
                 
-                # Feature toggles
                 features = []
                 if session.chat_enabled: features.append("💬 Chat")
                 if session.voice_enabled: features.append("🔊 Voice")
                 if features:
                     details.append(f"**Features**: {' '.join(features)}")
                 
-                # Last live info
                 if session.last_live > 0:
                     import datetime
                     last_live_time = datetime.datetime.fromtimestamp(session.last_live)
                     details.append(f"**Last Live**: {last_live_time.strftime('%Y-%m-%d %H:%M')}")
                 
-                # Current broadcast info if live
                 if session.is_live and session.providers:
-                    live_provider = next((p for p in session.providers if getattr(p, "is_live", False)), session.providers[0])
-                    title = getattr(live_provider, "title", "")
-                    game = getattr(live_provider, "game_name", "")
+                    live_provider = next((p for p in session.providers if p.stream_live), session.providers[0])
+                    title = live_provider.stream_title or ""
+                    category = live_provider.stream_category or ""
                     if title: details.append(f"**Title**: {title[:50]}{'...' if len(title) > 50 else ''}")
-                    if game: details.append(f"**Game**: {game}")
+                    if category: details.append(f"**Category**: {category}")
             
-            value = "\n".join(details)
-            embed.add_field(name=data["display_name"], value=value, inline=False)
+            embed.add_field(name=data["display_name"], value="\n".join(details), inline=False)
         
         await ctx.send(embed=embed)
 
