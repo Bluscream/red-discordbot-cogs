@@ -334,7 +334,11 @@ class StatusMonitorCog(commands.Cog):
         if inc.get("impact"):
             lines.append(f"Impact: **{inc['impact']}**")
         before = inc_change.get("before")
-        if inc_change["type"] == "incident_update" and before:
+        if inc_change["type"] == "incident_resolved":
+            # Only the last-known snapshot exists; its stored status is stale
+            # (e.g. "investigating"), so report it as resolved instead.
+            lines.append("Status: **resolved**")
+        elif inc_change["type"] == "incident_update" and before:
             for field in inc_change["fields"]:
                 lines.append(f"{field.title()}: `{before.get(field)}` → `{inc.get(field)}`")
         elif inc.get("status"):
@@ -436,7 +440,10 @@ class StatusMonitorCog(commands.Cog):
             parts.append(f"Service: **{service}**")
         if inc.get("impact"):
             parts.append(f"Impact: **{inc['impact']}**")
-        if inc.get("status"):
+        if change["type"] == "incident_resolved":
+            # Stored status is the stale last-known value; report as resolved.
+            parts.append("Status: **resolved**")
+        elif inc.get("status"):
             parts.append(f"Status: **{inc['status']}**")
         embed.description = "\n".join(parts)[:4096] or None
 
