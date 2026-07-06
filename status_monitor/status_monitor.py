@@ -261,7 +261,15 @@ class StatusMonitorCog(commands.Cog):
 
             new_incidents = self._build_incidents(data)
             old_incidents = await self.config.last_incidents()
-            changes += self._diff_incidents(old_incidents, new_incidents)
+            incident_changes = self._diff_incidents(old_incidents, new_incidents)
+            # Incidents carry no icon/display-name of their own; resolve them
+            # from the service snapshot so incident embeds can show the brand icon.
+            for inc_change in incident_changes:
+                svc = new_snapshot.get(inc_change["incident"].get("service"))
+                if svc:
+                    inc_change["icon"] = svc.get("icon")
+                    inc_change["service_name"] = svc.get("name")
+            changes += incident_changes
 
             # Always persist the latest snapshots.
             await self.config.last_snapshot.set(new_snapshot)
@@ -432,12 +440,15 @@ class StatusMonitorCog(commands.Cog):
             color=color,
             timestamp=datetime.now(timezone.utc),
         )
+        if change.get("icon"):
+            embed.set_thumbnail(url=change["icon"])
         if inc.get("url"):
             embed.url = inc["url"]
 
         parts = []
-        if service:
-            parts.append(f"Service: **{service}**")
+        service_label = change.get("service_name") or service
+        if service_label:
+            parts.append(f"Service: **{service_label}**")
         if inc.get("impact"):
             parts.append(f"Impact: **{inc['impact']}**")
         if change["type"] == "incident_resolved":
