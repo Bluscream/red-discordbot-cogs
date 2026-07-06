@@ -210,7 +210,7 @@ class StatusMonitorCog(commands.Cog):
                 # Newly appearing service - only report if there's a prior snapshot at all.
                 if old:
                     changes.append(
-                        {"type": "added", "service": new_svc, "before": None, "fields": []}
+                        {"type": "added", "id": service_id, "service": new_svc, "before": None, "fields": []}
                     )
                 continue
 
@@ -223,6 +223,7 @@ class StatusMonitorCog(commands.Cog):
                 changes.append(
                     {
                         "type": "changed",
+                        "id": service_id,
                         "service": new_svc,
                         "before": old_svc,
                         "fields": changed_fields,
@@ -233,7 +234,7 @@ class StatusMonitorCog(commands.Cog):
         for service_id, old_svc in old.items():
             if service_id not in new:
                 changes.append(
-                    {"type": "removed", "service": old_svc, "before": old_svc, "fields": []}
+                    {"type": "removed", "id": service_id, "service": old_svc, "before": old_svc, "fields": []}
                 )
 
         return changes
@@ -288,7 +289,66 @@ class StatusMonitorCog(commands.Cog):
     # Posting
     #
 
-    def _change_embed(self, change: Dict[str, Any]) -> discord.Embed:
+    # Discord embed hard limits.
+    MAX_FIELDS: ClassVar[int] = 25
+    MAX_FIELD_NAME: ClassVar[int] = 256
+    MAX_FIELD_VALUE: ClassVar[int] = 1024
+
+    @classmethod
+    def _safe_add_field(
+        cls, embed: discord.Embed, name: str, value: str, inline: bool = True
+    ) -> bool:
+        """Add a field, truncating to Discord limits. Returns False if full.
+
+        When the 25-field cap is reached, replaces the final field with an
+        overflow marker instead of silently dropping data or crashing the send.
+        """
+        name = (name or "​")[: cls.MAX_FIELD_NAME]
+        value = (value or "​")[: cls.MAX_FIELD_VALUE]
+        # Keep headroom under the 6000-char total embed limit.
+        fits_total = len(embed) + len(name) + len(value) < 5900
+        if len(embed.fields) < cls.MAX_FIELDS - 1 and fits_total:
+            embed.add_field(name=name, value=value, inline=inline)
+            return True
+        if len(embed.fields) == cls.MAX_FIELDS - 1:
+            # Reserve the last slot as an overflow notice.
+            embed.add_field(
+                name="…", value="Additional changes omitted (embed field limit).", inline=False
+            )
+        return False
+
+    @staticmethod
+    def _incident_field(inc_change: Dict[str, Any]) -> tuple:
+        """Render an incident change as an embed (name, value) field tuple."""
+        inc = inc_change["incident"]
+        name = inc.get("name", "Unknown incident")
+
+        if inc_change["type"] == "incident_new":
+            heading = f"🚨 New incident: {name}"
+        elif inc_change["type"] == "incident_resolved":
+            heading = f"✅ Incident resolved: {name}"
+        else:
+            heading = f"🔧 Incident updated: {name}"
+
+        lines = []
+        if inc.get("impact"):
+            lines.append(f"Impact: **{inc['impact']}**")
+        before = inc_change.get("before")
+        if inc_change["type"] == "incident_update" and before:
+            for field in inc_change["fields"]:
+                lines.append(f"{field.title()}: `{before.get(field)}` → `{inc.get(field)}`")
+        elif inc.get("status"):
+            lines.append(f"Status: **{inc['status']}**")
+        if inc.get("url"):
+            lines.append(f"[Details]({inc['url']})")
+
+        return heading, "\n".join(lines) or "​"
+
+    def _change_embed(
+        self,
+        change: Dict[str, Any],
+        related_incidents: Optional[List[Dict[str, Any]]] = None,
+    ) -> discord.Embed:
         if change["type"].startswith("incident_"):
             return self._incident_embed(change)
 
@@ -325,18 +385,26 @@ class StatusMonitorCog(commands.Cog):
             embed.set_footer(text=f"Category: {svc['category']}")
 
         if svc.get("status"):
-            embed.description = str(svc["status"])
+            embed.description = str(svc["status"])[:4096]
 
         before = change.get("before")
         if change["type"] == "changed" and before:
             for field in change["fields"]:
                 old_val = before.get(field)
                 new_val = svc.get(field)
-                embed.add_field(
-                    name=field.replace("_", " ").title(),
-                    value=f"`{old_val}` → `{new_val}`",
+                self._safe_add_field(
+                    embed,
+                    field.replace("_", " ").title(),
+                    f"`{old_val}` → `{new_val}`",
                     inline=True,
                 )
+
+        # Fold in any incidents for this same service from the same poll,
+        # so a degraded service and its incident appear as one message.
+        for inc_change in related_incidents or []:
+            field_name, field_value = self._incident_field(inc_change)
+            if not self._safe_add_field(embed, field_name, field_value, inline=False):
+                break
 
         return embed
 
@@ -370,14 +438,15 @@ class StatusMonitorCog(commands.Cog):
             parts.append(f"Impact: **{inc['impact']}**")
         if inc.get("status"):
             parts.append(f"Status: **{inc['status']}**")
-        embed.description = "\n".join(parts) or None
+        embed.description = "\n".join(parts)[:4096] or None
 
         before = change.get("before")
         if change["type"] == "incident_update" and before:
             for field in change["fields"]:
-                embed.add_field(
-                    name=field.title(),
-                    value=f"`{before.get(field)}` → `{inc.get(field)}`",
+                self._safe_add_field(
+                    embed,
+                    field.title(),
+                    f"`{before.get(field)}` → `{inc.get(field)}`",
                     inline=True,
                 )
 
@@ -385,9 +454,35 @@ class StatusMonitorCog(commands.Cog):
         return embed
 
     async def _post_changes(self, changes: List[Dict[str, Any]]) -> None:
-        """Post all change embeds to every configured channel across all guilds."""
-        for change in changes:
-            await self._broadcast(self._change_embed(change))
+        """Post change embeds to every configured channel across all guilds.
+
+        Incidents are merged into the embed of the service they belong to when
+        that service also changed in the same poll, so a single real-world event
+        produces a single message.
+        """
+        service_changes = [c for c in changes if not c["type"].startswith("incident_")]
+        incident_changes = [c for c in changes if c["type"].startswith("incident_")]
+
+        # Map service id -> its service change so incidents can attach to it.
+        service_by_id = {c.get("id"): c for c in service_changes}
+        related: Dict[Any, List[Dict[str, Any]]] = {}
+        orphan_incidents: List[Dict[str, Any]] = []
+        for inc_change in incident_changes:
+            svc_id = inc_change["incident"].get("service")
+            if svc_id in service_by_id:
+                related.setdefault(svc_id, []).append(inc_change)
+            else:
+                orphan_incidents.append(inc_change)
+
+        embeds: List[discord.Embed] = [
+            self._change_embed(change, related.get(change.get("id")))
+            for change in service_changes
+        ]
+        # Incidents with no matching service change still get their own embed.
+        embeds += [self._change_embed(change) for change in orphan_incidents]
+
+        for embed in embeds:
+            await self._broadcast(embed)
 
     async def _set_api_online(self, online: bool) -> None:
         """Track lookup-API reachability and announce transitions to channels."""
