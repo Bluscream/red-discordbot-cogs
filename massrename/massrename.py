@@ -49,19 +49,19 @@ class MassRename(commands.Cog):
                     if not row:
                         continue
                     name = row[0].strip()
-                    if name:
+                    if name and name.lower() not in ("name", "username"):
                         names.append(name)
             else:
                 for line in content.splitlines():
                     line = line.strip()
-                    if not line or line.startswith("#"):
+                    if not line or line.startswith("#") or line.lower() in ("name", "username"):
                         continue
                     if "," in line:
                         parts = [p.strip() for p in line.split(",")]
                         name = parts[0]
                     else:
                         name = line
-                    if name:
+                    if name and name.lower() not in ("name", "username"):
                         names.append(name)
         except Exception as e:
             log.error(f"Error fetching names from URL: {e}")

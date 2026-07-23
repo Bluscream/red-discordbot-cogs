@@ -62,21 +62,31 @@ class MessageReplacer(commands.Cog):
                 for row in reader:
                     if not row:
                         continue
-                    # First column is name, third is author image URL (if present)
                     name = row[0].strip()
-                    avatar_url = row[1].strip() if len(row) > 1 else ""
-                    if name:
-                        profiles.append({"name": name, "avatar_url": avatar_url})
+                    if not name or name.lower() in ("name", "username"):
+                        continue
+                    # Find first field starting with http as avatar URL
+                    avatar_url = ""
+                    for cell in row[1:]:
+                        cell_strip = cell.strip()
+                        if cell_strip.startswith(("http://", "https://")):
+                            avatar_url = cell_strip
+                            break
+                    profiles.append({"name": name, "avatar_url": avatar_url})
             else:
                 # Text format: each line is either name, or name,avatar_url
                 for line in content.splitlines():
                     line = line.strip()
-                    if not line or line.startswith("#"):
+                    if not line or line.startswith("#") or line.lower() in ("name", "username"):
                         continue
                     if "," in line:
                         parts = [p.strip() for p in line.split(",")]
                         name = parts[0]
-                        avatar_url = parts[-1] if parts[-1].startswith("http") else ""
+                        avatar_url = ""
+                        for part in parts[1:]:
+                            if part.startswith(("http://", "https://")):
+                                avatar_url = part
+                                break
                         profiles.append({"name": name, "avatar_url": avatar_url})
                     else:
                         profiles.append({"name": line, "avatar_url": ""})
