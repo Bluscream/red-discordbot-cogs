@@ -1,0 +1,20 @@
+{
+    "name": "MessageReplacer",
+    "author": [
+        "Bluscream (bluscream_)"
+    ],
+    "short": "Deletes and reposts messages via webhooks using random profiles.",
+    "description": "Deletes messages by configured users or all other users, and reposts them to the same channel with a random profile (name/avatar) loaded from CSV/TXT or added directly.",
+    "install_msg": "MessageReplacer installed! Set it up using `[p]messagereplacer`.",
+    "tags": [
+        "webhook",
+        "fun",
+        "utility"
+    ],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        11,
+        0
+    ]
+}
