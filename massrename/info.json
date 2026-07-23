@@ -1,0 +1,20 @@
+{
+    "name": "MassRename",
+    "author": [
+        "Bluscream (bluscream_)"
+    ],
+    "short": "Mass renames guild members to random names from a list.",
+    "description": "Allows renaming all server members to a random name from a text/csv list, ensuring minimal duplicates and full cycling of names before repeating.",
+    "install_msg": "MassRename installed! Configure and start using `[p]massrename` commands.",
+    "tags": [
+        "moderation",
+        "utility",
+        "fun"
+    ],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        11,
+        0
+    ]
+}
