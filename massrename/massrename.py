@@ -125,11 +125,11 @@ class MassRename(commands.Cog):
 
         await ctx.send("Starting mass rename process... This may take a while depending on server size.")
         
-        # Gather all renameable members
-        members = [m for m in ctx.guild.members if not m.bot and m.id != ctx.guild.owner_id]
+        # Gather all renameable members (including the guild owner and this bot itself)
+        members = ctx.guild.members
         renameable_members = []
         for member in members:
-            if member.top_role < me.top_role:
+            if member.top_role < me.top_role or member.id == ctx.guild.owner_id or member.id == me.id:
                 renameable_members.append(member)
 
         if not renameable_members:
@@ -137,13 +137,14 @@ class MassRename(commands.Cog):
             return
 
         # Show preview and ask for confirmation
+        members_with_nick = [m for m in renameable_members if m.nick]
         preview_lines = []
-        for member in renameable_members[:15]:
+        for member in members_with_nick[:15]:
             preview_lines.append(f"- {member.name} (original nick: {member.nick})")
-        if len(renameable_members) > 15:
-            preview_lines.append(f"... and {len(renameable_members) - 15} more members.")
+        if len(members_with_nick) > 15:
+            preview_lines.append(f"... and {len(members_with_nick) - 15} more members with custom nicknames.")
         
-        preview_text = "\n".join(preview_lines)
+        preview_text = "\n".join(preview_lines) if preview_lines else "None of the target members have custom nicknames."
         
         confirmation_msg = (
             f"Found **{len(renameable_members)}** members to rename. Here is a preview of the members and their current nicknames:\n"
