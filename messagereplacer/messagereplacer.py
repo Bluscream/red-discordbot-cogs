@@ -239,11 +239,32 @@ class MessageReplacer(commands.Cog):
             except Exception:
                 pass
 
+        # Handle stickers (download and attach as files, or fallback to sending URL in content)
+        content_text = message.content or ""
+        for sticker in message.stickers:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(sticker.url) as resp:
+                        if resp.status == 200:
+                            sticker_bytes = await resp.read()
+                            ext = "png"
+                            if sticker.url.endswith(".gif") or "gif" in resp.headers.get("content-type", "").lower():
+                                ext = "gif"
+                            elif sticker.url.endswith(".json") or "json" in resp.headers.get("content-type", "").lower():
+                                ext = "json"
+                            files.append(discord.File(io.BytesIO(sticker_bytes), filename=f"sticker.{ext}"))
+                        else:
+                            content_text += f"\n{sticker.url}"
+            except Exception:
+                content_text += f"\n{sticker.url}"
+        
+        content_text = content_text.strip()
+
         # Repost message
         sent = False
         try:
             await webhook.send(
-                content=message.content or None,
+                content=content_text or None,
                 username=profile["name"],
                 avatar_url=profile["avatar_url"] or None,
                 embeds=message.embeds,
