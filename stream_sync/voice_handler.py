@@ -58,7 +58,7 @@ class UnifiedVoiceHandler:
                                         "type": "identity",
                                         "payload": {"guild": guild, "avatar_bytes": img_bytes}
                                     })
-                    except: pass
+                    except Exception: pass
                 await self.action_queue.put({"type": "callback", "payload": {"func": _sync_avatar}})
         else:
             # Revert

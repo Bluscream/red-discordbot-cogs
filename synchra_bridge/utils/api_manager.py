@@ -45,7 +45,7 @@ class SynchraAPIManager:
         if self.client:
             try:
                 await self.client.close()
-            except: pass
+            except Exception: pass
             self.client = None
             self._initialized = False
 
@@ -151,6 +151,6 @@ class SynchraAPIManager:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
             if proc.returncode == 0:
                 return stdout.decode().strip()
-        except:
+        except Exception:
             pass
         return None

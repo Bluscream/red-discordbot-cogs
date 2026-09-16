@@ -1,0 +1,20 @@
+{
+    "name": "Bluscream",
+    "author": [
+        "Bluscream (bluscream_)"
+    ],
+    "short": "Developer & moderation utility suite.",
+    "description": "Developer & moderation utility suite, including the scam command for quick banning and message logging.",
+    "install_msg": "Thank you for installing the Bluscream utility cog!",
+    "tags": [
+        "moderation",
+        "utility"
+    ],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        11,
+        0
+    ],
+    "end_user_data_statement": "This cog does not persistently store any end user data."
+}

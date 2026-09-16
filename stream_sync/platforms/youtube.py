@@ -109,8 +109,10 @@ class YoutubePlatform(StreamPlatform):
                 viewers = 0
                 viewers_match = re.search(r'"viewCount":\{"runs":\[\{"text":"([\d,]+)"\}', html)
                 if viewers_match:
-                    try: voters = viewers_match.group(1).replace(",", "")
-                    except: voters = "0"
+                    try:
+                        voters = viewers_match.group(1).replace(",", "")
+                    except Exception:
+                        voters = "0"
                 
                 thumbnail = f"https://i.ytimg.com/vi/{channel_id}/maxresdefault.jpg"
                 

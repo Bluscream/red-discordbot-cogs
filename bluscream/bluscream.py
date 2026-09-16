@@ -232,7 +232,7 @@ class Bluscream(commands.Cog):
                     member = ctx.guild.get_member(target_user.id)
                     if member and member.joined_at:
                         user_info["joined_at"] = int(member.joined_at.timestamp())  # Unix timestamp for Discord format
-                except:
+                except Exception:
                     pass
                 
                 # Count total messages from user using search API
@@ -253,15 +253,15 @@ class Bluscream(commands.Cog):
                         user_info["message_count"] = search_result["total_results"]
                     else:
                         user_info["message_count"] = "Search unavailable"
-                except Exception as e:
-                    # Fallback to manual iteration if search fails
+                except Exception:
+                    # Fallback to manual iteration if search fails (e.g. bots cannot use /messages/search)
                     try:
                         message_count = 0
                         async for message in ctx.channel.history(limit=1000):
                             if message.author.id == target_user.id:
                                 message_count += 1
                         user_info["message_count"] = f"{message_count} (manual count)"
-                    except:
+                    except Exception:
                         user_info["message_count"] = "Unable to count"
                 
                 # Generate message link for default reason

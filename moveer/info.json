@@ -1,0 +1,21 @@
+{
+    "name": "Moveer",
+    "author": [
+        "Bluscream (bluscream_)"
+    ],
+    "short": "Voice channel management commands inspired by Moveer bot.",
+    "description": "Comprehensive voice channel management functionality including moving users between voice channels, disconnecting users, role-based moves, and category-based operations.",
+    "install_msg": "Thank you for installing Moveer! Use `[p]moveer` to manage voice channels.",
+    "tags": [
+        "voice",
+        "moderation",
+        "utility"
+    ],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        11,
+        0
+    ],
+    "end_user_data_statement": "This cog stores move statistics and temporary move history for audit purposes."
+}

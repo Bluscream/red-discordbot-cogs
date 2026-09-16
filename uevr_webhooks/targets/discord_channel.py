@@ -24,7 +24,7 @@ class DiscordChannelTarget(BaseTarget):
             return
             
         discord_embed = self.to_embed(profile)
-        now = datetime.utcnow().timestamp()
+        now = discord.utils.utcnow().timestamp()
         
         for chan_id in channels:
             # Skip if we know this channel is rate limited

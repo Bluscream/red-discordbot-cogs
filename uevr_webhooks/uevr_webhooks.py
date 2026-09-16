@@ -36,8 +36,8 @@ class UEVRWebhooks(commands.Cog):
         "monitored_channels": [1062167556129030164, 1199859776352428062, 1203329945770659861],
         "discord_channels": [1483609737198047424],
         "discord_webhooks": [],
-        "hass_webhooks": ["https://hass.minopia.de/api/webhook/-c7d3VKBdgySzs6SIng5mMzCT"],
-        "github_webhooks": [""],
+        "hass_webhooks": [],
+        "github_webhooks": [],
         "github_token": "",
         "poll_interval_minutes": 30,
         "cached_profiles": {} # unique_id -> timestamp
@@ -264,7 +264,7 @@ class UEVRWebhooks(commands.Cog):
                 await asyncio.sleep(2.0)
             
             # 3. Mark processed
-            newly_processed[archive.unique_id] = datetime.utcnow().timestamp()
+            newly_processed[archive.unique_id] = discord.utils.utcnow().timestamp()
             
         # Update cache
         async with self.config.cached_profiles() as active_cache:

@@ -40,7 +40,7 @@ class UEVRProfilesSource(ProfilesSource):
                             date_str = vf.get('creationDate', {}).get('timestampValue')
                             try:
                                 ts = datetime.fromisoformat(date_str.replace('Z', '+00:00')).timestamp() if date_str else None
-                            except:
+                            except Exception:
                                 ts = None
                                 
                             archive_file = f"{profile_id}.zip"
@@ -51,7 +51,7 @@ class UEVRProfilesSource(ProfilesSource):
                                     if lf.get('archive', {}).get('stringValue'):
                                         archive_file = lf.get('archive', {}).get('stringValue')
                                         break
-                            except:
+                            except Exception:
                                 pass
                                 
                             encoded_archive = urllib.parse.quote(f"profiles/{archive_file}", safe='')

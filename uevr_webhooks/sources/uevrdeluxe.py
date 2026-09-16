@@ -38,7 +38,7 @@ class UEVRDeluxeSource(ProfilesSource):
                             # UEVR Deluxe usually returns strings like "2024-03-12T10:00:00Z"
                             date_str = p.get('modifiedDate') or p.get('createdDate')
                             ts = datetime.fromisoformat(date_str.replace('Z', '+00:00')).timestamp() if date_str else None
-                        except:
+                        except Exception:
                             ts = None
                             
                         filename = f"{raw_exe}.zip"

@@ -57,7 +57,7 @@ class TikTokPlatform(StreamPlatform):
                     self.log.debug(f"to_dict failed for {ename}, using fallback: {e}")
                     data = {k: str(v) for k, v in vars(event).items() if not k.startswith('_')}
                     self.log.info(f"[TikTok Event] #{channel_id} | {ename} (Fallback): {json.dumps(data)}")
-                except:
+                except Exception:
                     self.log.error(f"Failed to dump {ename}: {e}")
 
         @client.on(ConnectEvent)
@@ -221,6 +221,6 @@ class TikTokPlatform(StreamPlatform):
         if client:
             try:
                 await client.stop()
-            except:
+            except Exception:
                 pass
             del self.clients[channel_id]

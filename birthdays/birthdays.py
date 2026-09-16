@@ -72,8 +72,12 @@ class Birthdays(commands.Cog):
 
     async def red_delete_data_for_user(self, *, _requester: str, _user_id: int) -> None:
         birthdays = await self.config.birthdays()
-        if _user_id in birthdays:
-            del birthdays[ctx.author.id]
+        str_id = str(_user_id)
+        if str_id in birthdays:
+            del birthdays[str_id]
+            await self.config.birthdays.set(birthdays)
+        elif _user_id in birthdays:
+            del birthdays[_user_id]
             await self.config.birthdays.set(birthdays)
         return
 

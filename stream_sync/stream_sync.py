@@ -480,7 +480,7 @@ class StreamSync(commands.Cog):
         await self.config.twitch_client_id.set(client_id)
         await self.config.twitch_client_secret.set(client_secret)
         try: await ctx.message.delete()
-        except: pass
+        except (discord.HTTPException, Exception): pass
         await ctx.send(success("Twitch Helix credentials updated."))
 
     @streamset.command(name="twitchchat")
@@ -489,7 +489,7 @@ class StreamSync(commands.Cog):
         await self.config.twitch_irc_nick.set(nickname)
         await self.config.twitch_irc_password.set(token if token.startswith("oauth:") else f"oauth:{token}")
         try: await ctx.message.delete()
-        except: pass
+        except (discord.HTTPException, Exception): pass
         await ctx.send(success("Twitch IRC credentials updated."))
 
     @streamset.command(name="tiktok")
@@ -498,5 +498,5 @@ class StreamSync(commands.Cog):
         await self.config.tiktok_session_id.set(session_id)
         await self.config.tiktok_tt_target_idc.set(tt_target_idc)
         try: await ctx.message.delete()
-        except: pass
+        except (discord.HTTPException, Exception): pass
         await ctx.send(success(f"TikTok session credentials updated (IDC: `{tt_target_idc}`)."))

@@ -12,7 +12,7 @@ def format_size(size_bytes: int) -> str:
     return f"{size_bytes:.2f} PB"
 
 import discord
-from datetime import datetime
+from datetime import datetime, timezone
 
 def escape_mentions(text: str) -> str:
     if not text:
@@ -22,6 +22,11 @@ def escape_mentions(text: str) -> str:
 class BaseTarget(ABC):
     """Abstract base class for a webhook/dispatch target."""
     
+    @abstractmethod
+    async def send(self, profile: UEVRProfile, session: aiohttp.ClientSession, targets: list) -> None:
+        """Dispatches the given profile to destination endpoints."""
+        pass
+        
     @staticmethod
     def to_discord_embed(profile: UEVRProfile) -> dict:
         """Returns a dict ready to be passed to discord.Embed().to_dict()"""
@@ -29,7 +34,7 @@ class BaseTarget(ABC):
             title=escape_mentions(profile.title),
             description=f"[{escape_mentions(profile.archive.filename)}]({profile.archive.sourceDownloadUrl})",
             color=discord.Color.green(),
-            timestamp=datetime.utcfromtimestamp(profile.archive.timestamp) if profile.archive.timestamp else datetime.utcnow()
+            timestamp=datetime.fromtimestamp(profile.archive.timestamp, timezone.utc) if profile.archive.timestamp else discord.utils.utcnow()
         )
         embed.set_author(name=escape_mentions(profile.archive.authorName))
         

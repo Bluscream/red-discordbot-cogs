@@ -67,7 +67,7 @@ class SynchraWSHandler:
         if self.api.client:
             try:
                 await self.api.client.ws.close()
-            except: pass
+            except Exception: pass
         self._subscriptions.clear()
 
     async def subscribe(self, channel_uuid: UUID):
