@@ -36,6 +36,10 @@ If you don't have an instance, consider using his nice [docker image](https://hu
 
 Adds events for user birthdays
 
+### Honeypot
+
+Trap channels that softban or ban spam bots and hacked accounts the moment they post, modelled on RiskyMH's Honeypot bot (DM with recovery steps and rejoin invite, logs, counters, experiments). See [its readme](honeypot/README.md).
+
 ### VoiceChannelLog
 
 Logs voice joins, leaves, moves, mutes, cameras and streams to the voice channel's own text chat. Port of the Equicord `voiceChannelLog` plugin. See [its readme](voicechannellog/README.md).

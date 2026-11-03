@@ -1,0 +1,21 @@
+{
+    "name": "Honeypot",
+    "author": [
+        "Bluscream (bluscream_)"
+    ],
+    "short": "Trap channels that softban/ban spam bots and hacked accounts the moment they post.",
+    "description": "Modelled on RiskyMH's Honeypot bot: multiple text/voice trap channels, softban (default), ban or disabled, recovery DM with optional rejoin invite, per-channel counters in the warning, log channel with unban button, Red modlog cases, owner/admin exemption, and experiments (forward message, reinvite, no warning, no DM, channel warmer, daily random/chaos rename, daily recreate, timeout first, only recent delete, ensure message delete).",
+    "install_msg": "Thanks for installing Honeypot! Run `[p]honeypot create` (or `[p]honeypot add #channel`), `[p]honeypot logchannel #mod-log`, then `[p]honeypot status` to check permissions.",
+    "tags": [
+        "moderation",
+        "anti-spam",
+        "security"
+    ],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        11,
+        0
+    ],
+    "end_user_data_statement": "This cog stores no per-user data. It keeps per-server settings, honeypot channel IDs with action counters, and one invite code. Triggering users are only named in the server's own log channel."
+}
