@@ -214,6 +214,12 @@ class CloseView(View):
             self.remove_item(self.verifyticket)
             self.remove_item(self.denyticket)
 
+        is_report = (pname and "report" in str(pname).lower()) or (
+            channel.name and "report" in str(channel.name).lower()
+        )
+        if not conf.user_can_escalate and not is_report:
+            self.remove_item(self.escalateticket)
+
     async def on_error(
         self, interaction: Interaction, error: Exception, item: Item[t.Any]
     ):

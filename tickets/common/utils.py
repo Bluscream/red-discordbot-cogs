@@ -418,8 +418,11 @@ async def can_escalate(
         return True
     if await is_admin_or_superior(bot, author):
         return True
-    if owner_id == author.id and conf.user_can_escalate:
-        return not conf.opened[owner_id][channel.id].locked
+    if owner_id == author.id:
+        panel_name = conf.opened[owner_id][channel.id].panel
+        is_report = bool(panel_name and "report" in str(panel_name).lower())
+        if conf.user_can_escalate or is_report:
+            return not conf.opened[owner_id][channel.id].locked
     return False
 
 
