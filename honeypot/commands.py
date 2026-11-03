@@ -148,10 +148,13 @@ class Honeypot(HoneypotBase):
         channel = await ctx.guild.create_text_channel(
             name or random_name(self._rng),
             category=category,
-            position=position,
             overwrites=category.overwrites if category else {},
             reason=f"Honeypot channel created by {ctx.author}",
         )
+        # A position passed at creation is not shifted around existing channels (it ties
+        # with whatever already holds it); edit() reorders the whole category properly.
+        with contextlib.suppress(discord.HTTPException):
+            await channel.edit(position=position, reason="Honeypot: place near the top")
         await self.honeypot_add(ctx, channel)
 
     @honeypot.command(name="action")
