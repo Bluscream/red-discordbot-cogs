@@ -207,16 +207,13 @@ class CloseView(View):
             and channel.id in conf.opened[owner_id]
         ):
             pname = conf.opened[owner_id][channel.id].panel
-        is_verification = (pname and "veri" in str(pname).lower()) or (
-            channel.name and "verify" in str(channel.name).lower()
-        )
+        # Decide by panel only: channel names are derived from usernames and can be spoofed.
+        is_verification = bool(pname and "veri" in str(pname).lower())
         if not is_verification:
             self.remove_item(self.verifyticket)
             self.remove_item(self.denyticket)
 
-        is_report = (pname and "report" in str(pname).lower()) or (
-            channel.name and "report" in str(channel.name).lower()
-        )
+        is_report = bool(pname and "report" in str(pname).lower())
         if not conf.user_can_escalate and not is_report:
             self.remove_item(self.escalateticket)
 
@@ -280,12 +277,11 @@ class CloseView(View):
                 ephemeral=True,
             )
 
-        role = guild.get_role(1567199036174377031) or discord.utils.get(
-            guild.roles, name="NSFW Access"
-        )
+        role = guild.get_role(conf.verify_role) if conf.verify_role else None
         if not role:
             return await interaction.response.send_message(
-                "❌ Role 'NSFW Access' (1567199036174377031) not found on this server.",
+                "❌ No verification role configured (or it was deleted). "
+                "An admin can set it with `tickets verifyrole <role>`.",
                 ephemeral=True,
             )
 

@@ -416,6 +416,9 @@ class HoneypotBase(commands.Cog):
         except RuntimeError:
             # Raised when the modlog case type is disabled; the honeypot log still records it.
             log.debug("Modlog case type disabled in %s", trigger.guild.id)
+        except Exception:
+            # A modlog failure must not abort the rest of the trigger (DM, log, counters).
+            log.exception("Honeypot modlog case failed in %s", trigger.guild.id)
 
     # endregion Trigger
     # region Side effects
@@ -944,12 +947,14 @@ class HoneypotBase(commands.Cog):
                     or now - settings.last_daily < DAILY_INTERVAL
                 ):
                     continue
-                await self.config.guild(guild).last_daily.set(now)
                 try:
                     await self.run_daily(guild, settings)
                 except Exception:
-                    # One guild's failure must not end the loop for every guild.
+                    # One guild's failure must not end the loop for every guild. last_daily
+                    # is left untouched so the run is retried on the next check.
                     log.exception("Honeypot daily experiments failed in %s", guild_id)
+                else:
+                    await self.config.guild(guild).last_daily.set(now)
             await asyncio.sleep(DAILY_CHECK_EVERY)
 
     async def run_daily(self, guild: discord.Guild, settings: Settings) -> None:
@@ -958,16 +963,19 @@ class HoneypotBase(commands.Cog):
             channel = guild.get_channel(channel_id)
             if not isinstance(channel, TrapChannel):
                 continue
+            # Voice traps keep their hand-picked name: a random text-style name would drop
+            # the "do not type here" label that keeps humans out of the voice chat.
+            renames = not isinstance(channel, discord.VoiceChannel)
             try:
                 if settings.has(Experiment.RECREATE_CHANNEL):
                     await self._recreate(channel, settings)
                     continue
-                if settings.has(Experiment.RANDOM_NAME_CHAOS):
+                if renames and settings.has(Experiment.RANDOM_NAME_CHAOS):
                     await channel.edit(
                         name=chaos_name(self._rng),
                         reason="Honeypot: daily random name (chaos)",
                     )
-                elif settings.has(Experiment.RANDOM_NAME):
+                elif renames and settings.has(Experiment.RANDOM_NAME):
                     await channel.edit(
                         name=random_name(self._rng, avoid=channel.name),
                         reason="Honeypot: daily random name",
@@ -990,7 +998,9 @@ class HoneypotBase(commands.Cog):
 
     async def _recreate(self, channel: TrapChannel, settings: Settings) -> None:
         guild = channel.guild
-        if settings.has(Experiment.RANDOM_NAME_CHAOS):
+        if isinstance(channel, discord.VoiceChannel):
+            name = channel.name
+        elif settings.has(Experiment.RANDOM_NAME_CHAOS):
             name = chaos_name(self._rng)
         elif settings.has(Experiment.RANDOM_NAME):
             name = random_name(self._rng, avoid=channel.name)

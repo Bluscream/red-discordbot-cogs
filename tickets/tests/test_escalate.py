@@ -7,7 +7,9 @@ from tickets.common.models import GuildSettings, OpenedTicket, Panel
 from tickets.common.utils import can_escalate
 
 
-def make_conf(user_can_escalate: bool, locked: bool = False, panel: str = "support") -> GuildSettings:
+def make_conf(
+    user_can_escalate: bool, locked: bool = False, panel: str = "support"
+) -> GuildSettings:
     conf = GuildSettings(user_can_escalate=user_can_escalate)
     conf.panels[panel] = Panel()
     ticket = OpenedTicket(
@@ -73,14 +75,21 @@ async def test_manage_guild_can_escalate_when_disabled():
         is True
     )
 
+
 @pytest.mark.asyncio
 async def test_owner_can_escalate_report_ticket_even_when_disabled():
-    assert await check(make_conf(user_can_escalate=False, panel="report"), fake_actor(111)) is True
+    assert (
+        await check(make_conf(user_can_escalate=False, panel="report"), fake_actor(111))
+        is True
+    )
 
 
 @pytest.mark.asyncio
 async def test_owner_cannot_escalate_locked_report_ticket():
     assert (
-        await check(make_conf(user_can_escalate=False, locked=True, panel="report"), fake_actor(111))
+        await check(
+            make_conf(user_can_escalate=False, locked=True, panel="report"),
+            fake_actor(111),
+        )
         is False
     )

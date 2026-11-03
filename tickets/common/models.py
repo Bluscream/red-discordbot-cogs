@@ -394,6 +394,7 @@ class GuildSettings(Base):
     user_can_close: bool = True
     user_can_manage: bool = False  # Add users to ticket
     user_can_escalate: bool = False  # Escalate own ticket to admins only
+    verify_role: int = 0  # Role granted by the Verify button (0 = not configured)
     ping_optins: list[
         int
     ] = []  # Staff user IDs pinged on every new ticket they can see

@@ -1130,6 +1130,16 @@ async def prune_invalid_tickets(
         for channel_id, ticket in list(tickets.items()):
             if guild.get_channel_or_thread(channel_id):
                 continue
+            # A cache miss is not proof of deletion (e.g. archived threads, partial cache
+            # after a reconnect): only prune once the API confirms the channel is gone.
+            try:
+                await guild.fetch_channel(channel_id)
+            except discord.NotFound:
+                pass
+            except discord.HTTPException:
+                continue
+            else:
+                continue
 
             count += 1
             log.info(f"Ticket channel {channel_id} no longer exists for {member}")

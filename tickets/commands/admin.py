@@ -1957,6 +1957,23 @@ class AdminCommands(MixinMeta):
             await ctx.send(_("User can no longer manage their support ticket channel"))
 
     @tickets.command()
+    async def verifyrole(
+        self, ctx: commands.Context, role: Optional[discord.Role] = None
+    ):
+        """
+        Set the role the Verify button grants on verification panels
+
+        Leave empty to clear it (the Verify button then refuses to act).
+        """
+        conf = self.db.get_conf(ctx.guild)
+        conf.verify_role = role.id if role else 0
+        await self.save()
+        if role:
+            await ctx.send(_("The Verify button now grants {}").format(role.name))
+        else:
+            await ctx.send(_("Verification role cleared"))
+
+    @tickets.command()
     async def selfescalate(self, ctx: commands.Context):
         """
         (Toggle) If users can escalate their own tickets
