@@ -1,0 +1,30 @@
+{
+    "author": ["ToHubLab"],
+    "name": "Sticky",
+    "version": "4.8.0",
+    "short": "Keep text, embeds, buttons and command buttons at the bottom of a channel.",
+    "description": "Automatically reposts a sticky message at the bottom of a channel. Supports plain text, embeds, components (buttons/selects) and clickable command buttons that execute real bot commands. Includes an interactive menu with bilingual UI (EN/DE), per-channel debounce delays, auto-delete for command replies, persistent command buttons that survive restarts, a full overview of all active stickies, and an optional debug mode that logs to a configurable channel.",
+    "end_user_data_statement": "This cog stores per-guild: channel IDs, sticky message content (text, embeds, component data), command button definitions (label, style, emoji, command, auto-delete delay), per-channel debounce delays, language preference, debug settings and the debug channel ID. No user IDs are stored.",
+    "install_msg": "🐙 Thank you for installing **Sticky v4.8** by ToHubLab!\n\n**What's new:**\n• 🖼️ Embed support — copy stickies 1:1 from any message\n• 🔘 Component support — buttons, link buttons, selects\n• ⚙️ Command buttons — trigger real bot commands\n• 🧹 Auto-delete — clean up command replies after X seconds\n• 🌐 Bilingual UI — English & German, switchable live\n• 🐛 Debug mode — detailed logs in a configurable channel\n• ⏱️ Per-channel debounce delays\n• 📋 Individual command button management\n\n**Quick start:**\n`[p]sticky menu` — open the interactive menu\n\nJoin our Discord for support & updates:\nhttp://discord.finn-bot.rf.gd",
+    "requirements": [
+        "discord.py>=2.0.0",
+        "redbot"
+    ],
+    "tags": [
+        "utility",
+        "sticky",
+        "message",
+        "automation",
+        "embed",
+        "buttons",
+        "components",
+        "commands",
+        "bilingual",
+        "debug"
+    ],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [3, 9, 0],
+    "hidden": false,
+    "disabled": false,
+    "type": "COG"
+}

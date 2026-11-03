@@ -44,6 +44,10 @@ Trap channels that softban or ban spam bots and hacked accounts the moment they 
 
 Vouched single-use invites: members request a 1-person invite through a form (who and why), every invite and join is logged, and an optional per-member allowance can be set (`[p]invitevouch limit`, default unlimited; staff exempt; `reset` frees slots).
 
+### Sticky
+
+Vendored [ToHubLab sticky](https://github.com/ToHubLab/ToHubLab-Cogs) (MIT, license in `sticky/LICENSE.ToHubLab`) with one patch: the periodic check reposts a sticky that ended up buried (e.g. its debounce timer was lost to a bot restart) once the channel has been quiet for the configured delay.
+
 ### VoiceChannelLog
 
 Logs voice joins, leaves, moves, mutes, cameras and streams to the voice channel's own text chat. Port of the Equicord `voiceChannelLog` plugin. See [its readme](voicechannellog/README.md).

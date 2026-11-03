@@ -21,6 +21,8 @@ ignore = [
 "*_test.py" = ["S101", "D101", "D102", "D103", "ANN201"]
 "abc.py" = ["D102"]
 "tickets/**" = ["ALL"]
+# Vendored third-party cog (ToHubLab, MIT) with a small patch; kept close to upstream.
+"sticky/**" = ["ALL"]
 
 [tool.isort]
 profile = "black"
@@ -38,4 +40,9 @@ untyped_calls_exclude = ["redbot"]
 
 [[tool.mypy.overrides]]
 module = "tickets.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+# Vendored third-party cog (ToHubLab sticky), not annotated upstream.
+module = "sticky.*"
 ignore_errors = true
