@@ -6,7 +6,15 @@ import discord
 from redbot.core import commands
 from redbot.core.utils.chat_formatting import box, pagify
 
-from .core import ChannelState, HoneypotBase, Settings, TrapChannel, Trigger
+from .core import (
+    ChannelState,
+    HoneypotBase,
+    Settings,
+    Skip,
+    TrapChannel,
+    Trigger,
+    _image_embeds,
+)
 from .experiments import DESCRIPTIONS, Experiment, parse
 from .names import random_name
 from .templates import (
@@ -15,7 +23,6 @@ from .templates import (
     Action,
     MessageKind,
     render,
-    split_images,
     validate,
 )
 
@@ -278,11 +285,19 @@ class Honeypot(HoneypotBase):
                 allowed_mentions=discord.AllowedMentions.none(),
             )
             return
-        text, images = split_images(settings.text(MessageKind.DM))
+        fake = Trigger(
+            ctx.guild,
+            ctx.channel
+            if isinstance(ctx.channel, TrapChannel)
+            else ctx.guild.text_channels[0],
+            ctx.author,
+            ctx.author,
+            ctx.message,
+            skip=Skip.OWNER if ctx.author.id == ctx.guild.owner_id else Skip.ADMIN,
+        )
+        embed, images = await self.build_dm_embed(fake, settings)
         await ctx.send(
-            "DM template (variables are filled per trigger):\n"
-            + box(text)
-            + ("\n" + "\n".join(images) if images else ""),
+            embeds=[embed, *_image_embeds(ctx.guild, images)],
             allowed_mentions=discord.AllowedMentions.none(),
         )
 

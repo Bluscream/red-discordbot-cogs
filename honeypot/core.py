@@ -445,9 +445,10 @@ class HoneypotBase(commands.Cog):
                 reason=f"Triggered honeypot -> 1h timeout before {settings.action.value}",
             )
 
-    async def _dm(self, trigger: Trigger, settings: Settings) -> None:
-        if settings.has(Experiment.NO_DM) or not self._dm_limiter.try_acquire():
-            return
+    async def build_dm_embed(
+        self, trigger: Trigger, settings: Settings
+    ) -> tuple[discord.Embed, list[str]]:
+        """Construct a formatted rich embed with German and English sections for DMs."""
         guild = trigger.guild
         template = settings.text(MessageKind.DM)
         if (
@@ -457,8 +458,8 @@ class HoneypotBase(commands.Cog):
             template += DEFAULT_DM_REINVITE
         public = _discoverable_link(guild)
         invite = ""
-        if "{{reinvite:link}}" in template:
-            invite = await self.reinvite_url(guild) or "*no invite available*"
+        if "{{reinvite:link}}" in template or settings.has(Experiment.REINVITE):
+            invite = await self.reinvite_url(guild) or ""
         values: dict[str, Value] = {
             "action:text": settings.action.past_text,
             "action": settings.action.past_text,
@@ -466,17 +467,92 @@ class HoneypotBase(commands.Cog):
             "server:name:linked": f"[{guild.name}]({public})" if public else guild.name,
             "server:public-link": public or "https://discord.com/servers",
             "honeypot:channel:link": trigger.message.jump_url,
-            "reinvite:link": invite,
+            "reinvite:link": invite or "*no invite available*",
             "user:mention": trigger.user.mention,
         }
         text, images = split_images(render(template, values))
-        footer = f"-# Automated message sent on behalf of **{guild.name}**. Replies are not monitored."
+
+        action_en = settings.action.past_text
+        action_de = {
+            Action.SOFTBAN: "gekickt",
+            Action.BAN: "gebannt",
+            Action.DISABLED: "nicht sanktioniert",
+        }.get(settings.action, action_en)
+
+        embed = discord.Embed(
+            title="🍯 Honeypot ausgelöst / Honeypot Triggered",
+            color=discord.Color.red(),
+        )
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+
+        if MessageKind.DM in settings.messages:
+            embed.description = text
+        else:
+            de_lines = [
+                f"Hallo {trigger.user.mention},",
+                f"dein Account wurde auf **{guild.name}** **{action_de}**, weil dein Account in einen geschützten [Fallen-Kanal]({trigger.message.jump_url}) geschrieben hat.",
+                "",
+                "**Warst du das nicht?**",
+                "Dein Account ist höchstwahrscheinlich kompromittiert (Session-Diebstahl, Phishing oder Malware).",
+                "",
+                "**Schritte zur Kontosicherheit:**",
+                "1. Ändere sofort dein Discord-Passwort.",
+                "2. Melde alle Sitzungen ab (*Benutzereinstellungen → Geräte*).",
+                "3. Aktiviere die Zwei-Faktor-Authentifizierung (2FA).",
+                "4. Entferne unbekannte Apps (*Benutzereinstellungen → Autorisierte Apps*).",
+                "5. Führe einen Sicherheits-Scan deines Geräts durch.",
+                "",
+                "📖 [Discord-Hilfe: Gehackten Account sichern](https://dis.gd/hackedaccount)",
+            ]
+            embed.add_field(name="🇩🇪 Deutsch", value="\n".join(de_lines), inline=False)
+
+            en_lines = [
+                f"Hello {trigger.user.mention},",
+                f"your account was **{action_en}** from **{guild.name}** for posting in a protected [trap channel]({trigger.message.jump_url}).",
+                "",
+                "**Was this not you?**",
+                "Your account is likely compromised (stolen session token, phishing, or malware).",
+                "",
+                "**Security Steps:**",
+                "1. Change your Discord password immediately.",
+                "2. Log out of all sessions (*User Settings → Devices*).",
+                "3. Enable Two-Factor Authentication (2FA).",
+                "4. Revoke unauthorized apps (*User Settings → Authorized Apps*).",
+                "5. Run a malware scan on your device.",
+                "",
+                "📖 [Discord Help: Compromised Account Guide](https://dis.gd/hackedaccount)",
+            ]
+            embed.add_field(name="🇬🇧 English", value="\n".join(en_lines), inline=False)
+
+            if invite:
+                embed.add_field(
+                    name="🔄 Wiedereinladung / Reinvite",
+                    value=f"Sobald dein Account wieder sicher ist: {invite}\nOnce your account is secured: {invite}",
+                    inline=False,
+                )
+            else:
+                embed.add_field(
+                    name="🔄 Wiedereintritt / Rejoining",
+                    value="Sobald dein Account wieder sicher ist, kannst du von einem bestehenden Mitglied erneut eingeladen werden.\nOnce your account is safe again, ask an existing member for a new invite.",
+                    inline=False,
+                )
+
+        footer = f"Automated message sent on behalf of {guild.name}. Replies are not monitored."
         if trigger.skip:
-            footer += f"\n-# This is only an example: as the {trigger.skip.value} you can't be {settings.action.past_text}."
+            footer += f"\nThis is only an example: as the {trigger.skip.value} you can't be {settings.action.past_text}."
+        embed.set_footer(text=footer, icon_url=guild.icon.url if guild.icon else None)
+
+        return embed, images
+
+    async def _dm(self, trigger: Trigger, settings: Settings) -> None:
+        if settings.has(Experiment.NO_DM) or not self._dm_limiter.try_acquire():
+            return
+        embed, images = await self.build_dm_embed(trigger, settings)
         try:
+            all_embeds = [embed, *_image_embeds(trigger.guild, images)]
             await trigger.user.send(
-                f"{text}\n\n{footer}",
-                embeds=_image_embeds(guild, images),
+                embeds=all_embeds,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
         except discord.HTTPException as err:
