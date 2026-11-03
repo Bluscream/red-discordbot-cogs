@@ -209,7 +209,7 @@ class InviteVouch(commands.Cog):
             "member_log_channel_id": 1567177989286797446,  # #👥members
             "panel_channel_id": 1567200988178161805,  # #🎫create-ticket
             "panel_message_id": 0,
-            "max_per_member": 1,  # 0 = unlimited; staff (Red mod/admin) are exempt
+            "max_per_member": 0,  # 0 = unlimited (default: the cog traces invites, it does not ration them)
             "invites": {},
         }
         self.config.register_guild(**default_guild)

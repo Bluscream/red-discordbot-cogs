@@ -42,7 +42,7 @@ Trap channels that softban or ban spam bots and hacked accounts the moment they 
 
 ### InviteVouch
 
-Vouched single-use invites: members request a 1-person invite through a form (who and why), every invite and join is logged, and each member gets a limited allowance (default 1, staff exempt, `[p]invitevouch limit` / `reset`).
+Vouched single-use invites: members request a 1-person invite through a form (who and why), every invite and join is logged, and an optional per-member allowance can be set (`[p]invitevouch limit`, default unlimited; staff exempt; `reset` frees slots).
 
 ### VoiceChannelLog
 
