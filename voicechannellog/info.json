@@ -1,0 +1,21 @@
+{
+    "name": "VoiceChannelLog",
+    "author": [
+        "Bluscream (bluscream_)"
+    ],
+    "short": "Logs voice joins, leaves, moves, mutes, cameras and streams to the voice channel's text chat.",
+    "description": "Port of the Equicord voiceChannelLog plugin. Posts connect/disconnect/move, self and server mute/deafen, camera and stream events into the voice channel's built-in text chat (or a same-named text channel in the same category), with per-event toggles, custom templates and an optional webhook author name/avatar.",
+    "install_msg": "Thanks for installing VoiceChannelLog! Run `[p]vclog enable` in your server, then `[p]vclog settings` to see the events and templates.",
+    "tags": [
+        "voice",
+        "logging",
+        "utility"
+    ],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [
+        3,
+        11,
+        0
+    ],
+    "end_user_data_statement": "This cog stores no personal data. It only keeps per-server settings (enabled events, message templates and ignored channels)."
+}

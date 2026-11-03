@@ -23,3 +23,14 @@ ignore = [
 
 [tool.isort]
 profile = "black"
+
+[tool.mypy]
+python_version = "3.11"  # keep in step with tool.ruff target-version
+strict = true
+warn_unreachable = true
+# Red's command, group and listener decorators carry no type hints, so under strict mode every
+# decorated cog method would be reported as "untyped decorator". The methods themselves are
+# still fully annotated and checked.
+disallow_untyped_decorators = false
+# Same cause: Context.send, commands.group and Cog.__init__ in redbot are unannotated.
+untyped_calls_exclude = ["redbot"]
