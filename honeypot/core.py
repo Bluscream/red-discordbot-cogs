@@ -330,19 +330,25 @@ class HoneypotBase(commands.Cog):
 
     async def _handle(self, trigger: Trigger) -> None:
         settings = await self.settings(trigger.guild)
-        if (
+        delete_now = (
             settings.has(Experiment.ENSURE_DELETE)
             and settings.action is not Action.DISABLED
-        ):
-            self.spawn(self._delete_quietly(trigger.message))
-        elif self._react_limiter.try_acquire():
+        )
+        if not delete_now and self._react_limiter.try_acquire():
             self.spawn(self._react(trigger.message))
         if settings.action is Action.DISABLED:
             return
+        if trigger.skip is None:
+            # Forward before deleting, or the forward finds no message to reference.
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(
+                    self._forward(trigger, settings), PRE_ACTION_BUDGET / 2
+                )
+        if delete_now:
+            self.spawn(self._delete_quietly(trigger.message))
 
         pre = [self._dm(trigger, settings)]
         if trigger.skip is None:
-            pre.append(self._forward(trigger, settings))
             pre.append(self._timeout_first(trigger, settings))
         tasks = [asyncio.create_task(coro) for coro in pre]
         for task in tasks:

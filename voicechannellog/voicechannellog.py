@@ -111,6 +111,11 @@ class VoiceChannelLog(commands.Cog):
                 await self._deliver(item)
             except discord.HTTPException as err:
                 log.warning("Could not post voice log in %s: %s", item.target.id, err)
+            except Exception:
+                # Anything else must not end the worker, or voice logging stops silently.
+                log.exception(
+                    "Unexpected error posting voice log in %s", item.target.id
+                )
             finally:
                 self._queue.task_done()
 

@@ -40,6 +40,10 @@ Adds events for user birthdays
 
 Trap channels that softban or ban spam bots and hacked accounts the moment they post, modelled on RiskyMH's Honeypot bot (DM with recovery steps and rejoin invite, logs, counters, experiments). See [its readme](honeypot/README.md).
 
+### InviteVouch
+
+Vouched single-use invites: members request a 1-person invite through a form (who and why), every invite and join is logged, and each member gets a limited allowance (default 1, staff exempt, `[p]invitevouch limit` / `reset`).
+
 ### VoiceChannelLog
 
 Logs voice joins, leaves, moves, mutes, cameras and streams to the voice channel's own text chat. Port of the Equicord `voiceChannelLog` plugin. See [its readme](voicechannellog/README.md).

@@ -1,0 +1,15 @@
+{
+    "author": ["Bluscream", "Antigravity"],
+    "description": "One-by-one vouched single-use invite system with modals and logging.",
+    "install_msg": "Thank you for installing InviteVouch! Use `[p]invitevouch panel #channel` to post the request button.",
+    "short": "Vouched 1-time Discord invite generator",
+    "tags": ["invites", "whitelist", "moderation", "vouch", "tickets"],
+    "type": "COG",
+    "end_user_data_statement": "This cog stores invite records, voucher IDs, and stated reasons for auditing purposes.",
+    "min_bot_version": "3.5.0",
+    "min_python_version": [3, 11, 0],
+    "hidden": false,
+    "disabled": false,
+    "required_cogs": {},
+    "requirements": []
+}
