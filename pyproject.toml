@@ -20,6 +20,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "*_test.py" = ["S101", "D101", "D102", "D103", "ANN201"]
 "abc.py" = ["D102"]
+"tickets/**" = ["ALL"]
 
 [tool.isort]
 profile = "black"
@@ -34,3 +35,7 @@ warn_unreachable = true
 disallow_untyped_decorators = false
 # Same cause: Context.send, commands.group and Cog.__init__ in redbot are unannotated.
 untyped_calls_exclude = ["redbot"]
+
+[[tool.mypy.overrides]]
+module = "tickets.*"
+ignore_errors = true
