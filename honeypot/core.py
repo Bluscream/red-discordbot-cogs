@@ -865,7 +865,8 @@ class HoneypotBase(commands.Cog):
                 await self.config.guild(guild).last_daily.set(now)
                 try:
                     await self.run_daily(guild, settings)
-                except Exception:  # noqa: BLE001 - one guild's failure must not end the loop for all
+                except Exception:
+                    # One guild's failure must not end the loop for every guild.
                     log.exception("Honeypot daily experiments failed in %s", guild_id)
             await asyncio.sleep(DAILY_CHECK_EVERY)
 
