@@ -1945,6 +1945,16 @@ class Sticky(commands.Cog):
         target_prefix = f"{CMD_BUTTON_PREFIX}:{guild.id}:{channel.id}:"
         has_buttons = bool(data.get("command_buttons"))
         content = (data.get("content") or "").strip()
+        target_embed_titles = {
+            (e.get("title") or "").strip()
+            for e in (data.get("embeds") or [])
+            if (e.get("title") or "").strip()
+        }
+        target_embed_descs = {
+            (e.get("description") or "").strip()
+            for e in (data.get("embeds") or [])
+            if (e.get("description") or "").strip()
+        }
         now = time.monotonic()
 
         try:
@@ -1965,9 +1975,19 @@ class Sticky(commands.Cog):
                             break
                     if match:
                         break
-                if not match and not has_buttons and content:
-                    if msg.content.strip() == content:
-                        match = True
+                if not match:
+                    if not has_buttons and content:
+                        if msg.content.strip() == content:
+                            match = True
+                    if not match and (target_embed_titles or target_embed_descs) and msg.embeds:
+                        for emb in msg.embeds:
+                            t = (emb.title or "").strip()
+                            d = (emb.description or "").strip()
+                            if (target_embed_titles and t in target_embed_titles) or (
+                                target_embed_descs and d in target_embed_descs
+                            ):
+                                match = True
+                                break
                 if match:
                     dupes.append(msg)
         except discord.HTTPException:
