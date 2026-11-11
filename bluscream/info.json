@@ -4,7 +4,7 @@
         "Bluscream (bluscream_)"
     ],
     "short": "Developer & moderation utility suite.",
-    "description": "Developer & moderation utility suite, including the scam command for quick banning and message logging.",
+    "description": "Small utility commands: command dump and permission-less role creation. Scam softbans moved to the standalone scambot.",
     "install_msg": "Thank you for installing the Bluscream utility cog!",
     "tags": [
         "moderation",
