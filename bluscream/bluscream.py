@@ -21,8 +21,16 @@ log = logging.getLogger("red.blu.bluscream")
 
 # Guild and channel the scam report was hardcoded to before it became a setting.
 LEGACY_REPORT = (747967102895390741, 896433099100016750)
+# Servers where scam bans exist at all (prefix command and context menu); Flat2VR Modding.
+DEFAULT_SCAM_GUILDS = [747967102895390741]
 SCHEMA_VERSION = 2
 INLINE_DUMP_MAX = 1900  # leaves room for the note and code fence under Discord's 2000
+
+
+async def _scam_here(ctx: commands.Context) -> bool:
+    """Command check: hide and block the scam commands outside the allowlisted servers."""
+    cog = ctx.cog
+    return isinstance(cog, Bluscream) and await cog.scam_allowed(ctx.guild)
 
 
 class Bluscream(commands.Cog):
@@ -36,13 +44,14 @@ class Bluscream(commands.Cog):
         self.config = Config.get_conf(
             self, identifier=928374561, force_registration=True
         )
-        self.config.register_global(schema_version=1)
+        self.config.register_global(schema_version=1, scam_guilds=DEFAULT_SCAM_GUILDS)
         self.config.register_guild(scam_channel=None)
         self.scam_menu = app_commands.ContextMenu(
             name="Scam ban", callback=self.scam_menu_cb
         )
         self.scam_menu.default_permissions = discord.Permissions(ban_members=True)
         self.scam_menu.guild_only = True
+        self._menu_guilds: list[int] = []
 
     async def cog_load(self) -> None:
         """Migrate settings and register the message context menu."""
@@ -50,11 +59,35 @@ class Bluscream(commands.Cog):
             guild_id, channel_id = LEGACY_REPORT
             await self.config.guild_from_id(guild_id).scam_channel.set(channel_id)
             await self.config.schema_version.set(SCHEMA_VERSION)
-        self.bot.tree.add_command(self.scam_menu)
+        self._register_menu(await self.config.scam_guilds())
 
     async def cog_unload(self) -> None:
         """Remove the context menu again."""
-        self.bot.tree.remove_command(self.scam_menu.name, type=self.scam_menu.type)
+        self._register_menu([])
+
+    def _register_menu(self, guild_ids: list[int]) -> None:
+        """Register the context menu for exactly these guilds (guild-scoped, never global).
+
+        Guild-scoped commands bypass Red's `[p]slash enable`; they appear after
+        `[p]slash sync <guild>`.
+        """
+        for guild_id in self._menu_guilds:
+            self.bot.tree.remove_command(
+                self.scam_menu.name,
+                guild=discord.Object(guild_id),
+                type=self.scam_menu.type,
+            )
+        if guild_ids:
+            self.bot.tree.add_command(
+                self.scam_menu,
+                guilds=[discord.Object(g) for g in guild_ids],
+                override=True,
+            )
+        self._menu_guilds = list(guild_ids)
+
+    async def scam_allowed(self, guild: discord.Guild | None) -> bool:
+        """Whether scam bans are enabled in this guild."""
+        return guild is not None and guild.id in await self.config.scam_guilds()
 
     async def red_delete_data_for_user(self, *, requester: str, user_id: int) -> None:
         """No per-user data is stored."""
@@ -119,6 +152,7 @@ class Bluscream(commands.Cog):
 
     @commands.group(name="scam", invoke_without_command=True)
     @commands.guild_only()
+    @commands.check(_scam_here)
     @commands.admin_or_permissions(ban_members=True)
     @commands.bot_has_permissions(ban_members=True)
     async def scam(self, ctx: commands.GuildContext, *, reason: str = "") -> None:
@@ -164,6 +198,11 @@ class Bluscream(commands.Cog):
     ) -> None:
         """Apps → Scam ban on a message."""
         actor = interaction.user
+        if not await self.scam_allowed(interaction.guild):
+            await interaction.response.send_message(
+                error("Scam bans are not enabled on this server."), ephemeral=True
+            )
+            return
         if not isinstance(actor, discord.Member) or not (
             actor.guild_permissions.ban_members or await self.bot.is_owner(actor)
         ):
@@ -211,6 +250,29 @@ class Bluscream(commands.Cog):
             )
         else:
             await ctx.send(f"{note}\n{box(content, lang='csv')}")
+
+    @bluscream.command(name="scamguilds")
+    @commands.is_owner()
+    async def scamguilds(self, ctx: commands.Context, *guild_ids: int) -> None:
+        """Show or set the server IDs where scam bans exist; none given shows them."""
+        if guild_ids:
+            await self.config.scam_guilds.set(list(guild_ids))
+            self._register_menu(list(guild_ids))
+        current = await self.config.scam_guilds()
+        names = [
+            f"{g.name} (`{g.id}`)"
+            if (g := self.bot.get_guild(i))
+            else f"`{i}` (bot not in it)"
+            for i in current
+        ]
+        note = (
+            f"\nRun `{ctx.clean_prefix}slash sync <guild>` for each changed server."
+            if guild_ids
+            else ""
+        )
+        await ctx.send(
+            f"Scam bans are enabled in: {', '.join(names) or 'nowhere'}{note}"
+        )
 
     @commands.group(name="role")
     @commands.guild_only()
