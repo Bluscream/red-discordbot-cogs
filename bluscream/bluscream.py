@@ -1,380 +1,258 @@
-"""Bluscream cog for Red-DiscordBot - Utility commands"""
+"""Bluscream cog for Red-DiscordBot: scam softbans and small utility commands."""
 
-from typing import ClassVar, Dict, List, Optional, Union
-from logging import getLogger
+from __future__ import annotations
+
 import io
-from datetime import datetime
+import logging
+from typing import TYPE_CHECKING, Any
 
 import discord
-from redbot.core import Config, checks, commands
-from redbot.core.bot import Red
-from redbot.core.utils.chat_formatting import error, info, success, warning, box
-import asyncio
+from discord import app_commands
+from redbot.core import Config, commands
+from redbot.core.utils.chat_formatting import box, error, success
 
-log = getLogger("red.blu.bluscream")
+from .scam import Request, Roles, refusal, softban, target_problem
+
+if TYPE_CHECKING:
+    from discord.ext.commands import Command as DpyCommand
+    from redbot.core.bot import Red
+
+log = logging.getLogger("red.blu.bluscream")
+
+# Guild and channel the scam report was hardcoded to before it became a setting.
+LEGACY_REPORT = (747967102895390741, 896433099100016750)
+SCHEMA_VERSION = 2
+INLINE_DUMP_MAX = 1900  # leaves room for the note and code fence under Discord's 2000
 
 
 class Bluscream(commands.Cog):
-    """
-    Utility commands for bot management and debugging.
-    """
+    """Scam softbans and small utility commands."""
 
     __author__ = "Bluscream"
-    __version__ = "1.0.0"
-
-    default_global_settings: ClassVar[dict[str, Union[int, dict, List[int]]]] = {
-        "schema_version": 1
-    }
+    __version__ = "2.0.0"
 
     def __init__(self, bot: Red) -> None:
-        """Set up the cog."""
-        super().__init__()
         self.bot = bot
         self.config = Config.get_conf(
             self, identifier=928374561, force_registration=True
         )
-        self.config.register_global(**self.default_global_settings)
+        self.config.register_global(schema_version=1)
+        self.config.register_guild(scam_channel=None)
+        self.scam_menu = app_commands.ContextMenu(
+            name="Scam ban", callback=self.scam_menu_cb
+        )
+        self.scam_menu.default_permissions = discord.Permissions(ban_members=True)
+        self.scam_menu.guild_only = True
 
     async def cog_load(self) -> None:
-        """Called when the cog is loaded."""
-        log.info("Bluscream cog loaded successfully")
+        """Migrate settings and register the message context menu."""
+        if await self.config.schema_version() < SCHEMA_VERSION:
+            guild_id, channel_id = LEGACY_REPORT
+            await self.config.guild_from_id(guild_id).scam_channel.set(channel_id)
+            await self.config.schema_version.set(SCHEMA_VERSION)
+        self.bot.tree.add_command(self.scam_menu)
 
-    @commands.Cog.listener()
-    async def on_command(self, ctx: commands.Context):
-        """Log all command executions."""
-        guild_name = ctx.guild.name if ctx.guild else "DM"
-        guild_id = ctx.guild.id if ctx.guild else "DM"
-        channel_name = ctx.channel.name if hasattr(ctx.channel, 'name') else f"DM-{ctx.channel.id}"
-        
-        log.info(
-            f"Command executed: {ctx.command} "
-            f"by {ctx.author} (ID: {ctx.author.id}) "
-            f"in #{channel_name} (ID: {ctx.channel.id}) "
-            f"in {guild_name} (ID: {guild_id})"
+    async def cog_unload(self) -> None:
+        """Remove the context menu again."""
+        self.bot.tree.remove_command(self.scam_menu.name, type=self.scam_menu.type)
+
+    async def red_delete_data_for_user(self, *, requester: str, user_id: int) -> None:
+        """No per-user data is stored."""
+        del requester, user_id
+
+    # region Scam
+
+    async def _report_channel(self, guild: discord.Guild) -> discord.TextChannel | None:
+        channel = guild.get_channel(await self.config.guild(guild).scam_channel() or 0)
+        return channel if isinstance(channel, discord.TextChannel) else None
+
+    async def _check(
+        self, actor: discord.Member, message: discord.Message
+    ) -> str | None:
+        """Return why `actor` may not scam-ban the author of `message`, or None."""
+        problem = target_problem(message)
+        if problem is not None:
+            return problem
+        guild = actor.guild
+        target = message.author
+        member = (
+            target
+            if isinstance(target, discord.Member)
+            else guild.get_member(target.id)
+        )
+        return refusal(
+            Roles(
+                actor_id=actor.id,
+                actor_top=actor.top_role.position,
+                target_id=target.id,
+                target_top=member.top_role.position if member else None,
+                bot_id=guild.me.id,
+                bot_top=guild.me.top_role.position,
+                owner_id=guild.owner_id or 0,
+                actor_is_bot_owner=await self.bot.is_owner(actor),
+            )
         )
 
-    def _build_message_link(self, guild_id: int, channel_id: int, message_id: int, domain: str = "") -> str:
-        """Build a Discord message link from guild, channel, and message IDs."""
-        domain = domain or "discord.com"
-        return f"https://{domain}/channels/{guild_id}/{channel_id}/{message_id}"
-    
-    def _build_message_link_from_msg(self, message: discord.Message, domain: str = "") -> str:
-        """Build a Discord message link from a message object."""
-        return self._build_message_link(message.guild.id, message.channel.id, message.id, domain)
+    async def _run(
+        self, actor: discord.Member, message: discord.Message, reason: str
+    ) -> str:
+        """Check, softban and report; return the line to show the moderator."""
+        problem = await self._check(actor, message)
+        if problem is not None:
+            return error(problem)
+        request = Request(
+            guild=actor.guild,
+            actor=actor,
+            message=message,
+            reason=reason or f"Scam in #{getattr(message.channel, 'name', '?')}",
+            report_channel=await self._report_channel(actor.guild),
+        )
+        try:
+            return success(await softban(self.bot, request))
+        except discord.Forbidden:
+            return error(
+                "I'm missing the Ban Members permission or my role is too low."
+            )
+        except discord.HTTPException as exc:
+            log.exception("Scam softban failed in %s", actor.guild.id)
+            return error(f"Discord rejected the softban: {exc.text or exc.status}")
 
-    def _format_command_signature(self, command: commands.Command) -> str:
-        """Format a command signature with its parameters."""
-        if not command.parent:  # Root command
-            signature = command.name
-        else:  # Subcommand
-            signature = f"{command.parent.name} {command.name}"
-        
-        # Add parameters
-        if command.clean_params:
-            params = []
-            for param_name, param in command.clean_params.items():
-                if param.default == param.empty:
-                    if param.kind == param.VAR_POSITIONAL:
-                        params.append(f"<{param_name}...>")
-                    else:
-                        params.append(f"<{param_name}>")
-                else:
-                    if param.kind == param.VAR_POSITIONAL:
-                        params.append(f"[{param_name}...]")
-                    else:
-                        params.append(f"[{param_name}]")
-            signature += " " + " ".join(params)
-        
-        return signature
+    @commands.group(name="scam", invoke_without_command=True)
+    @commands.guild_only()
+    @commands.admin_or_permissions(ban_members=True)
+    @commands.bot_has_permissions(ban_members=True)
+    async def scam(self, ctx: commands.GuildContext, *, reason: str = "") -> None:
+        """Reply to a scam message with this to softban its author.
 
-    def _get_command_arguments(self, command: commands.Command) -> str:
-        """Get command arguments as a formatted string."""
-        if not command.clean_params:
-            return ""
-        
-        args = []
-        for param_name, param in command.clean_params.items():
-            if param.default == param.empty:
-                if param.kind == param.VAR_POSITIONAL:
-                    args.append(f"<{param_name}...>")
-                else:
-                    args.append(f"<{param_name}>")
-            else:
-                if param.kind == param.VAR_POSITIONAL:
-                    args.append(f"[{param_name}...]")
-                else:
-                    args.append(f"[{param_name}]")
-        
-        return " ".join(args)
-
-    def _get_cog_name(self, command: commands.Command) -> str:
-        """Get the cog name for a command."""
-        return command.cog_name or "No Cog"
-
-    async def _react_or_send(self, ctx: commands.Context, emoji: str, message: str):
-        """Try to react with an emoji, or send a message if reaction permissions are missing."""
-        if ctx.channel.permissions_for(ctx.me).add_reactions:
+        Bans with a 7-day message purge and unbans right away. The message text and
+        attachments are saved to the report channel first (`[p]scam channel`).
+        You can also right-click the message: Apps → Scam ban.
+        """
+        ref = ctx.message.reference
+        target = ref.resolved if ref else None
+        if ref and ref.message_id and not isinstance(target, discord.Message):
             try:
-                await ctx.message.add_reaction(emoji)
-                return
+                target = await ctx.channel.fetch_message(ref.message_id)
+            except discord.NotFound:
+                target = None
+        if not isinstance(target, discord.Message):
+            await ctx.send(error("Reply to the scam message with this command."))
+            return
+        result = await self._run(ctx.author, target, reason)
+        await ctx.send(result, delete_after=15)
+        if ctx.channel.permissions_for(ctx.me).manage_messages:
+            try:
+                await ctx.message.delete()
             except discord.HTTPException:
-                pass
-        await ctx.send(message)
+                log.debug("Could not delete the scam command message")
+
+    @scam.command(name="channel")
+    async def scam_channel(
+        self, ctx: commands.GuildContext, channel: discord.TextChannel | None = None
+    ) -> None:
+        """Set the channel scam reports go to; leave empty to turn reports off."""
+        await self.config.guild(ctx.guild).scam_channel.set(
+            channel.id if channel else None
+        )
+        if channel:
+            await ctx.send(success(f"Scam reports now go to {channel.mention}."))
+        else:
+            await ctx.send(success("Scam reports are off."))
+
+    async def scam_menu_cb(
+        self, interaction: discord.Interaction, message: discord.Message
+    ) -> None:
+        """Apps → Scam ban on a message."""
+        actor = interaction.user
+        if not isinstance(actor, discord.Member) or not (
+            actor.guild_permissions.ban_members or await self.bot.is_owner(actor)
+        ):
+            await interaction.response.send_message(
+                error("You need the Ban Members permission."), ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.followup.send(
+            await self._run(actor, message, ""), ephemeral=True
+        )
+
+    # endregion Scam
+    # region Utilities
 
     @commands.group(name="bluscream", aliases=["blu"], invoke_without_command=True)
-    async def bluscream(self, ctx: commands.Context):
+    async def bluscream(self, ctx: commands.Context) -> None:
         """Bluscream utility commands."""
         await ctx.send_help(ctx.command)
 
     @bluscream.command(name="dumpcmds")
     @commands.is_owner()
-    async def dumpcmds(self, ctx: commands.Context):
-        """
-        Dump all commands to CSV format.
-        
-        Format: cog;command;comma_separated_aliases;arguments
-        """
-        await ctx.send(info("Generating command dump... This may take a moment."))
-
-        # Collect all commands
-        all_commands = []
-        
-        def walk_commands(commands_list: List[commands.Command], parent: Optional[str] = None, cog_name: Optional[str] = None):
-            for command in commands_list:
-                if isinstance(command, commands.Group):
-                    # Add the group command itself
-                    full_name = f"{parent} {command.name}".strip() if parent else command.name
-                    aliases = ",".join(command.aliases) if command.aliases else ""
-                    args = self._get_command_arguments(command)
-                    actual_cog_name = cog_name or self._get_cog_name(command)
-                    all_commands.append((actual_cog_name, full_name, aliases, args))
-                    
-                    # Recursively walk subcommands
-                    walk_commands(list(command.commands), full_name, actual_cog_name)
-                else:
-                    # Regular command
-                    full_name = f"{parent} {command.name}".strip() if parent else command.name
-                    aliases = ",".join(command.aliases) if command.aliases else ""
-                    args = self._get_command_arguments(command)
-                    actual_cog_name = cog_name or self._get_cog_name(command)
-                    all_commands.append((actual_cog_name, full_name, aliases, args))
-
-        # Walk all cogs and commands
-        for cog_name, cog in self.bot.cogs.items():
-            if hasattr(cog, 'walk_commands'):
-                walk_commands(list(cog.walk_commands()), cog_name=cog_name)
-        
-        # Also walk bot's own commands (not in cogs)
-        walk_commands(list(self.bot.walk_commands()), cog_name="Bot Commands")
-
-        # Remove duplicates and sort
-        unique_commands = list(set(all_commands))
-        unique_commands.sort(key=lambda x: (x[0], x[1]))  # Sort by cog name, then command name
-
-        # Generate CSV content
-        csv_lines = ["cog;command;comma_separated_aliases;arguments"]
-        for cog_name, cmd_name, aliases, args in unique_commands:
-            # Escape semicolons in the data
-            cog_name_escaped = cog_name.replace(";", "\\;")
-            cmd_name_escaped = cmd_name.replace(";", "\\;")
-            aliases_escaped = aliases.replace(";", "\\;")
-            args_escaped = args.replace(";", "\\;")
-            csv_lines.append(f"{cog_name_escaped};{cmd_name_escaped};{aliases_escaped};{args_escaped}")
-
-        csv_content = "\n".join(csv_lines)
-
-        # Send as file if too long, otherwise as code block
-        if len(csv_content) > 1900:  # Discord message limit
-            # Send as file
-            file = discord.File(
-                io.StringIO(csv_content),
-                filename="commands_dump.csv"
-            )
-            await ctx.send(file=file, content=success(f"Generated command dump with {len(unique_commands)} commands."))
-        else:
-            # Send as code block
+    async def dumpcmds(self, ctx: commands.Context) -> None:
+        """Dump all commands as CSV: cog;command;aliases;arguments."""
+        rows = sorted(
+            (
+                (
+                    cmd.cog_name or "No Cog",
+                    cmd.qualified_name,
+                    ",".join(cmd.aliases),
+                    _signature(cmd),
+                )
+                for cmd in self.bot.walk_commands()
+            ),
+            key=lambda row: (row[0], row[1]),
+        )
+        lines = ["cog;command;comma_separated_aliases;arguments"]
+        lines += [";".join(field.replace(";", "\\;") for field in row) for row in rows]
+        content = "\n".join(lines)
+        note = success(f"Generated command dump with {len(rows)} commands.")
+        if len(content) > INLINE_DUMP_MAX:
             await ctx.send(
-                box(csv_content, lang="csv"),
-                content=success(f"Generated command dump with {len(unique_commands)} commands:")
+                note,
+                file=discord.File(io.BytesIO(content.encode()), "commands_dump.csv"),
             )
-
-    @commands.command(name="scam")
-    @commands.has_permissions(ban_members=True)
-    @commands.bot_has_permissions(ban_members=True, read_message_history=True)
-    async def scam(self, ctx: commands.Context, *, reason: str = None):
-        """
-        Ban the user from the replied message, purge last 7 days, then unban after 1 second.
-        
-        Args:
-            reason: Optional reason for the ban. If not provided, uses "Scam: <message link>"
-        """
-        if not ctx.message.reference:
-            await ctx.send(error("You must reply to a message to use this command."))
-            return
-        
-        try:
-            # Get the referenced message
-            referenced_message = await ctx.channel.fetch_message(ctx.message.reference.message_id)
-            target_user = referenced_message.author
-            
-            async with ctx.typing():
-                # Collect user information before banning
-                user_info = {
-                    "username": str(target_user),
-                    "userid": target_user.id,
-                    "created_at": int(target_user.created_at.timestamp()),  # Unix timestamp for Discord format
-                    "joined_at": None,
-                    "message_count": 0
-                }
-                
-                # Get join date if user is still in server
-                try:
-                    member = ctx.guild.get_member(target_user.id)
-                    if member and member.joined_at:
-                        user_info["joined_at"] = int(member.joined_at.timestamp())  # Unix timestamp for Discord format
-                except Exception:
-                    pass
-                
-                # Count total messages from user using search API
-                try:
-                    # Use the search API endpoint directly
-                    search_url = f"/guilds/{ctx.guild.id}/messages/search"
-                    search_params = {
-                        "author_id": target_user.id,
-                        "limit": 100  # Get count from search results
-                    }
-                    
-                    search_result = await ctx.bot.http.request(
-                        discord.http.Route('GET', search_url, guild_id=ctx.guild.id),
-                        params=search_params
-                    )
-                    
-                    if search_result and "total_results" in search_result:
-                        user_info["message_count"] = search_result["total_results"]
-                    else:
-                        user_info["message_count"] = "Search unavailable"
-                except Exception:
-                    # Fallback to manual iteration if search fails (e.g. bots cannot use /messages/search)
-                    try:
-                        message_count = 0
-                        async for message in ctx.channel.history(limit=1000):
-                            if message.author.id == target_user.id:
-                                message_count += 1
-                        user_info["message_count"] = f"{message_count} (manual count)"
-                    except Exception:
-                        user_info["message_count"] = "Unable to count"
-                
-                # Generate message link for default reason
-                if not reason:
-                    reason = f"Scam: {self._build_message_link_from_msg(referenced_message)}"
-                
-                # Ban the user and purge last 7 days
-                await ctx.guild.ban(target_user, reason=reason, delete_message_seconds=60*60*24*7)
-                
-                # Send summary to specified channel if in specific server
-                summary_message = None
-                if ctx.guild.id == 747967102895390741:
-                    try:
-                        summary_channel = ctx.guild.get_channel(896433099100016750)
-                        if summary_channel:
-                            summary_embed = discord.Embed(
-                                title="",
-                                color=discord.Color.red(),
-                                timestamp=discord.utils.utcnow()
-                            )
-                            uid = user_info["userid"]
-                            summary_embed.add_field(name="User", value=target_user.mention, inline=True)
-                            summary_embed.add_field(name="User ID", value=f"`{uid}`", inline=True)
-                            summary_embed.add_field(name="Account Created", value=f"<t:{user_info['created_at']}:R>" if user_info["created_at"] else "Not available", inline=False)
-                            summary_embed.add_field(name="Join Date", value=f"<t:{user_info['joined_at']}:R>" if user_info["joined_at"] else "Not available", inline=False)
-                            summary_embed.add_field(name="Message Count", value=str(user_info["message_count"]), inline=False)
-                            summary_embed.add_field(name="Reason", value=reason, inline=False)
-                            summary_embed.add_field(name="Moderator", value=ctx.author.mention, inline=False)
-                            summary_embed.set_footer(text=f"{datetime.now()}")
-                            
-                            summary_message = await summary_channel.send(embed=summary_embed)
-                    except Exception as e:
-                        log.warning(f"Failed to send scam summary to channel: {e}")
-                
-                # Wait 1 second then unban
-                await asyncio.sleep(1)
-                
-                # Use summary message link as unban reason if available, otherwise default reason
-                unban_reason = "Temporary scam ban"
-                if summary_message:
-                    unban_reason = self._build_message_link_from_msg(summary_message)
-                
-                await ctx.guild.unban(target_user, reason=unban_reason)
-            
-            # Add check mark reaction to command message
-            await self._react_or_send(ctx, "✅", success("Scam ban completed successfully."))
-            
-        except discord.NotFound as e:
-            log.error(e)
-            await self._react_or_send(ctx, "❓", error("The referenced message could not be found."))
-        except discord.Forbidden as e:
-            log.error(e)
-            await self._react_or_send(ctx, "🚫", error("I don't have permission to perform this action."))
-        except Exception as e:
-            log.error(e)
-            await self._react_or_send(ctx, "❌", error(f"An error occurred: {str(e)}"))
+        else:
+            await ctx.send(f"{note}\n{box(content, lang='csv')}")
 
     @commands.group(name="role")
     @commands.guild_only()
-    @commands.has_permissions(manage_roles=True)
-    async def role(self, ctx: commands.Context):
+    @commands.admin_or_permissions(manage_roles=True)
+    async def role(self, ctx: commands.GuildContext) -> None:
         """Role management commands."""
-        pass
 
     @role.command(name="add")
     @commands.bot_has_permissions(manage_roles=True)
-    async def role_add(self, ctx: commands.Context, name: str, color: Optional[discord.Color] = None):
-        """
-        Add a role with no permissions on the bottom of the role list.
-        
-        Args:
-            name: The name of the new role.
-            color: The color of the new role (hex code or name). If omitted, uses a random color.
-        """
-        if color is None:
-            color = discord.Color.random()
-        
-        async with ctx.typing():
-            try:
-                # Create the role with no permissions
-                new_role = await ctx.guild.create_role(
-                    name=name,
-                    color=color,
-                    permissions=discord.Permissions.none(),
-                    reason=f"Created by {ctx.author} ({ctx.author.id}) via bluscream cog"
-                )
-                
-                # Move to bottom (position 1 is just above @everyone)
-                await new_role.edit(position=1)
-                
-                await self._react_or_send(ctx, "✅", success(f"Role **{name}** created and moved to the bottom of the list."))
-            except discord.Forbidden:
-                await self._react_or_send(ctx, "🚫", error("I do not have permission to manage roles."))
-            except discord.HTTPException as e:
-                await self._react_or_send(ctx, "❌", error(f"Failed to create role: {e}"))
+    async def role_add(
+        self, ctx: commands.GuildContext, name: str, color: discord.Color | None = None
+    ) -> None:
+        """Create a role without permissions at the bottom of the list (random colour if omitted)."""
+        new_role = await ctx.guild.create_role(
+            name=name,
+            color=color or discord.Color.random(),
+            permissions=discord.Permissions.none(),
+            reason=f"Created by {ctx.author} ({ctx.author.id}) via bluscream cog",
+        )
+        await new_role.edit(position=1)
+        await ctx.send(success(f"Role **{name}** created at the bottom of the list."))
 
-    # Error handling
-    async def cog_command_error(self, ctx: commands.Context, error: Exception):
-        """Handle command errors."""
-        if isinstance(error, commands.MissingPermissions):
-            await ctx.send(error("You don't have permission to use this command."))
-        elif isinstance(error, commands.BotMissingPermissions):
-            await ctx.send(error("I don't have the required permissions to perform this action."))
-        elif isinstance(error, commands.CheckFailure):
-            await ctx.send(error("Command check failed."))
-        elif isinstance(error, commands.CommandInvokeError):
-            # Handle the wrapped exception
-            original_error = error.original
-            if isinstance(original_error, commands.BotMissingPermissions):
-                await ctx.send(error("I don't have the required permissions to perform this action."))
-            else:
-                log.error(f"Unexpected error in {ctx.command}: {original_error}")
-                await ctx.send(error("An unexpected error occurred. Please try again later."))
-        else:
-            log.error(f"Unexpected error in {ctx.command}: {error}")
-            await ctx.send(error("An unexpected error occurred. Please try again later."))
+    @commands.Cog.listener()
+    async def on_command(self, ctx: commands.Context) -> None:
+        """Log command use at debug level (large servers make INFO too noisy)."""
+        log.debug(
+            "Command %s by %s in %s/%s",
+            ctx.command,
+            ctx.author.id,
+            ctx.guild.id if ctx.guild else "DM",
+            ctx.channel.id,
+        )
+
+    # endregion Utilities
+
+
+def _signature(command: DpyCommand[Any, ..., Any]) -> str:
+    """Render a command's parameters as `<required>` / `[optional]`."""
+    parts = []
+    for name, param in command.clean_params.items():
+        dots = "..." if param.kind is param.VAR_POSITIONAL else ""
+        parts.append(
+            f"<{name}{dots}>" if param.default is param.empty else f"[{name}{dots}]"
+        )
+    return " ".join(parts)
