@@ -30,6 +30,12 @@ WEBHOOK_NAME = "VoiceChannelLog"
 MAX_CONTENT = 2000
 MAX_WEBHOOK_NAME = 80
 
+# Events posted in the voice channel's own text chat when voice_chat is enabled.
+# Connect, disconnect and move represent joining/leaving/switching the room itself.
+VOICE_CHAT_EVENTS: frozenset[VoiceEvent] = frozenset(
+    {VoiceEvent.CONNECT, VoiceEvent.DISCONNECT, VoiceEvent.MOVE}
+)
+
 VoiceLike: TypeAlias = discord.VoiceChannel | discord.StageChannel
 Target: TypeAlias = discord.TextChannel | discord.channel.VocalGuildChannel
 
@@ -78,13 +84,14 @@ class VoiceChannelLog(commands.Cog):
     """
 
     __author__ = "Bluscream"
-    __version__ = "1.1.0"
+    __version__ = "1.2.0"
 
     default_guild_settings: ClassVar[dict[str, object]] = {
         "enabled": False,
         "log_mode": "small",
         "log_channel": None,
         "voice_chat": True,
+        "voice_chat_all_events": False,
         "events": {event.value: True for event in VoiceEvent},
         "templates": {},
         "author_name": "",
@@ -317,6 +324,7 @@ class VoiceChannelLog(commands.Cog):
                 log_target = ch
 
         voice_chat_enabled = bool(settings.get("voice_chat", True))
+        voice_chat_all = bool(settings.get("voice_chat_all_events", False))
         mode = _mode_from_str(str(settings.get("log_mode", "small")))
 
         logged_to_channel_events: set[VoiceEvent] = set()
@@ -331,8 +339,9 @@ class VoiceChannelLog(commands.Cog):
             if not rendered.strip():
                 continue
 
-            # 1. Post to voice channel text chat if enabled
-            if voice_chat_enabled:
+            # 1. Post to voice channel text chat if enabled.
+            # By default, only join / leave / move events appear in the room chat.
+            if voice_chat_enabled and (voice_chat_all or event in VOICE_CHAT_EVENTS):
                 target = self._associated_text_channel(channel)
                 if target.id not in ignored and target.permissions_for(guild.me).send_messages:
                     outgoing = self._build_outgoing(
@@ -346,7 +355,7 @@ class VoiceChannelLog(commands.Cog):
                     )
                     self._queue.put_nowait(outgoing)
 
-            # 2. Post to central log channel if configured (deduplicate moves)
+            # 2. Post all enabled events to central log channel if configured (deduplicate moves)
             if log_target is not None:
                 if event == VoiceEvent.MOVE:
                     if VoiceEvent.MOVE in logged_to_channel_events:
@@ -467,7 +476,7 @@ class VoiceChannelLog(commands.Cog):
     async def vclog_voicechat(
         self, ctx: commands.GuildContext, on: bool  # noqa: FBT001
     ) -> None:
-        """Whether to post logs into each voice channel's own text chat."""
+        """Whether to post join/leave/move logs into each voice channel's own text chat."""
         await self.config.guild(ctx.guild).voice_chat.set(on)
         await ctx.send(
             f"Logging to voice channel text chats is now **{'enabled' if on else 'disabled'}**."
@@ -551,7 +560,7 @@ class VoiceChannelLog(commands.Cog):
             f"Enabled: {settings['enabled']}",
             f"Mode: {settings.get('log_mode', 'small')}",
             f"Dedicated channel: {log_chan.name if log_chan else 'none'}",
-            f"Voice chat logging: {settings.get('voice_chat', True)}",
+            f"Voice chat logging: {settings.get('voice_chat', True)} (connect/disconnect/move)",
             f"Ignore bots: {settings['ignore_bots']}",
             f"Author: {settings['author_name'] or '(the bot)'}",
             f"Icon: {settings['author_icon'] or '(default)'}",
