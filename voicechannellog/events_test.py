@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 from .events import (
     DEFAULT_TEMPLATES,
+    EVENT_COLOURS,
+    LogMode,
     TemplateContext,
     VoiceEvent,
     detect_events,
@@ -89,15 +91,24 @@ CTX = TemplateContext(
     new_channel_id=7,
     guild_name="G",
     guild_id=9,
-    now="<t:0:f>",
+    timestamp=1731410870,
 )
 
 
 def test_render_default_connect() -> None:
     assert (
         render(DEFAULT_TEMPLATES[VoiceEvent.CONNECT], CTX)
-        == "🔊 <@42> connected to <#7>"
+        == "🟢 <t:1731410870:T> **{userid} b1u** joined <#7>"
     )
+
+
+def test_render_placeholders() -> None:
+    template = "{time} | {now} | {relative} | {date} | {mention} | {displayname} | {username}"
+    expected = (
+        "<t:1731410870:T> | <t:1731410870:f> | <t:1731410870:R> | <t:1731410870:d> | "
+        "<@42> | {userid} b1u | blu"
+    )
+    assert render(template, CTX) == expected
 
 
 def test_render_is_single_pass_and_keeps_unknown() -> None:
@@ -106,3 +117,11 @@ def test_render_is_single_pass_and_keeps_unknown() -> None:
 
 def test_every_event_has_a_default_template() -> None:
     assert set(DEFAULT_TEMPLATES) == set(VoiceEvent)
+
+
+def test_every_event_has_a_colour() -> None:
+    assert set(EVENT_COLOURS) == set(VoiceEvent)
+
+
+def test_log_modes_exist() -> None:
+    assert {m.value for m in LogMode} == {"small", "normal", "embed-small", "embed"}

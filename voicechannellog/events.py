@@ -1,6 +1,6 @@
 """Pure voice-state diffing and template rendering for the VoiceChannelLog cog.
 
-Nothing in here touches Discord. The cog feeds ``discord.VoiceState`` objects in through the
+Nothing in here touches Discord. The cog feeds discord.VoiceState objects in through the
 structural protocols below, which keeps this module testable without a gateway.
 """
 
@@ -9,6 +9,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol, TypeVar
+
+
+class LogMode(StrEnum):
+    """Display modes for voice activity logs."""
+
+    SMALL = "small"
+    NORMAL = "normal"
+    EMBED_SMALL = "embed-small"
+    EMBED = "embed"
 
 
 class VoiceEvent(StrEnum):
@@ -31,28 +40,48 @@ class VoiceEvent(StrEnum):
     SERVER_UNDEAFEN = "server_undeafen"
 
 
+EVENT_COLOURS: Mapping[VoiceEvent, int] = {
+    VoiceEvent.CONNECT: 0x57F287,
+    VoiceEvent.DISCONNECT: 0xED4245,
+    VoiceEvent.MOVE: 0x5865F2,
+    VoiceEvent.MUTE: 0xED4245,
+    VoiceEvent.UNMUTE: 0x57F287,
+    VoiceEvent.DEAFEN: 0xED4245,
+    VoiceEvent.UNDEAFEN: 0x57F287,
+    VoiceEvent.CAMERA_ON: 0x5865F2,
+    VoiceEvent.CAMERA_OFF: 0x747F8D,
+    VoiceEvent.STREAM_START: 0xEB459E,
+    VoiceEvent.STREAM_STOP: 0x747F8D,
+    VoiceEvent.SERVER_MUTE: 0xED4245,
+    VoiceEvent.SERVER_UNMUTE: 0x57F287,
+    VoiceEvent.SERVER_DEAFEN: 0xED4245,
+    VoiceEvent.SERVER_UNDEAFEN: 0x57F287,
+}
+
+
 DEFAULT_TEMPLATES: Mapping[VoiceEvent, str] = {
-    VoiceEvent.CONNECT: "🔊 <@{userid}> connected to <#{newChannelId}>",
-    VoiceEvent.DISCONNECT: "🔇 <@{userid}> disconnected from <#{oldChannelId}>",
-    VoiceEvent.MOVE: "🔄 <@{userid}> moved to <#{newChannelId}>",
-    VoiceEvent.MUTE: "🔇 <@{userid}> muted themselves",
-    VoiceEvent.UNMUTE: "🔊 <@{userid}> unmuted themselves",
-    VoiceEvent.DEAFEN: "🤐 <@{userid}> deafened themselves",
-    VoiceEvent.UNDEAFEN: "👂 <@{userid}> undeafened themselves",
-    VoiceEvent.CAMERA_ON: "📹 <@{userid}> enabled their camera",
-    VoiceEvent.CAMERA_OFF: "📴 <@{userid}> disabled their camera",
-    VoiceEvent.STREAM_START: "📺 <@{userid}> started streaming",
-    VoiceEvent.STREAM_STOP: "⏹️ <@{userid}> stopped streaming",
-    VoiceEvent.SERVER_MUTE: "🔇 <@{userid}> was muted by server/admin",
-    VoiceEvent.SERVER_UNMUTE: "🔊 <@{userid}> was unmuted by server/admin",
-    VoiceEvent.SERVER_DEAFEN: "🤐 <@{userid}> was deafened by server/admin",
-    VoiceEvent.SERVER_UNDEAFEN: "👂 <@{userid}> was undeafened by server/admin",
+    VoiceEvent.CONNECT: "🟢 {time} **{displayname}** joined <#{newChannelId}>",
+    VoiceEvent.DISCONNECT: "🔴 {time} **{displayname}** left <#{oldChannelId}>",
+    VoiceEvent.MOVE: "🔄 {time} **{displayname}** moved <#{oldChannelId}> ➔ <#{newChannelId}>",
+    VoiceEvent.MUTE: "🔇 {time} **{displayname}** muted",
+    VoiceEvent.UNMUTE: "🔊 {time} **{displayname}** unmuted",
+    VoiceEvent.DEAFEN: "🤐 {time} **{displayname}** deafened",
+    VoiceEvent.UNDEAFEN: "👂 {time} **{displayname}** undeafened",
+    VoiceEvent.CAMERA_ON: "📹 {time} **{displayname}** camera on",
+    VoiceEvent.CAMERA_OFF: "📴 {time} **{displayname}** camera off",
+    VoiceEvent.STREAM_START: "📺 {time} **{displayname}** started streaming",
+    VoiceEvent.STREAM_STOP: "⏹️ {time} **{displayname}** stopped streaming",
+    VoiceEvent.SERVER_MUTE: "🔇 {time} **{displayname}** was server-muted",
+    VoiceEvent.SERVER_UNMUTE: "🔊 {time} **{displayname}** was server-unmuted",
+    VoiceEvent.SERVER_DEAFEN: "🤐 {time} **{displayname}** was server-deafened",
+    VoiceEvent.SERVER_UNDEAFEN: "👂 {time} **{displayname}** was server-undeafened",
 }
 
 PLACEHOLDERS: tuple[str, ...] = (
     "username",
     "displayname",
     "userid",
+    "mention",
     "avatar",
     "oldChannelName",
     "oldChannelId",
@@ -61,6 +90,9 @@ PLACEHOLDERS: tuple[str, ...] = (
     "guildName",
     "guildId",
     "now",
+    "time",
+    "relative",
+    "date",
 )
 
 _PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
@@ -80,11 +112,11 @@ ChannelT_co = TypeVar("ChannelT_co", bound=ChannelLike, covariant=True)
 
 
 class VoiceStateLike(Protocol[ChannelT_co]):
-    """Structural view of ``discord.VoiceState``."""
+    """Structural view of discord.VoiceState."""
 
     @property
     def channel(self) -> ChannelT_co | None:
-        """Channel the member is in, or ``None`` when not connected."""
+        """Channel the member is in, or None when not connected."""
         ...
 
     @property
@@ -211,7 +243,7 @@ class TemplateContext:
     new_channel_id: int | None
     guild_name: str
     guild_id: int
-    now: str
+    timestamp: int
 
     def as_mapping(self) -> dict[str, str]:
         """Return the placeholder name to value mapping."""
@@ -223,6 +255,7 @@ class TemplateContext:
             "username": self.username,
             "displayname": self.displayname,
             "userid": str(self.userid),
+            "mention": f"<@{self.userid}>",
             "avatar": self.avatar,
             "oldChannelName": self.old_channel_name,
             "oldChannelId": snowflake(self.old_channel_id),
@@ -230,14 +263,17 @@ class TemplateContext:
             "newChannelId": snowflake(self.new_channel_id),
             "guildName": self.guild_name,
             "guildId": str(self.guild_id),
-            "now": self.now,
+            "now": f"<t:{self.timestamp}:f>",
+            "time": f"<t:{self.timestamp}:T>",
+            "relative": f"<t:{self.timestamp}:R>",
+            "date": f"<t:{self.timestamp}:d>",
         }
 
 
 def render(template: str, context: TemplateContext) -> str:
-    """Fill ``{placeholder}`` tokens in a single pass; unknown tokens are left untouched.
+    """Fill {placeholder} tokens in a single pass; unknown tokens are left untouched.
 
-    A single pass matters: a display name that itself contains ``{userid}`` must not be
+    A single pass matters: a display name that itself contains {userid} must not be
     expanded a second time.
     """
     values = context.as_mapping()
